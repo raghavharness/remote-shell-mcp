@@ -71,7 +71,7 @@ Using MCP for remote shell access provides:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/mcp-remote-shell.git
+git clone https://github.com/raghavharness/remote-shell-mcp
 cd mcp-remote-shell
 
 # Install dependencies
