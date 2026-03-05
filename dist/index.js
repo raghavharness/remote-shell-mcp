@@ -133,9 +133,11 @@ class RemoteShellServer {
         }, {
             capabilities: {
                 tools: {},
+                prompts: {},
             },
         });
         this.setupToolHandlers();
+        this.setupPromptHandlers();
         this.startStaleSessionCleanup();
     }
     // Cleanup stale sessions (no activity for 1 hour)
@@ -428,6 +430,10 @@ This creates an authentic terminal experience where the user interprets the outp
                                 type: "number",
                                 description: "Time to wait for output in ms (default: 2000 for commands, 3000 for new sessions). Increase for slow commands.",
                             },
+                            forceNewSession: {
+                                type: "boolean",
+                                description: "If true, forces creation of a new parallel session even if one is already active. Use this to SSH into multiple machines simultaneously.",
+                            },
                         },
                         required: ["command"],
                     },
@@ -554,7 +560,7 @@ Supports:
                     // MAIN SMART SHELL COMMAND HANDLER
                     // ============================================
                     case "shell": {
-                        const { command, waitTime } = params;
+                        const { command, waitTime, forceNewSession } = params;
                         const trimmedCommand = command.trim();
                         // Check for exit/end session commands using special sequences
                         if (isSessionExitCommand(trimmedCommand)) {
@@ -636,8 +642,10 @@ ${recentOutput ? `${formatOutputStart()}\n${recentOutput}\n${formatOutputEnd()}`
                         }
                         // Check if we have an active session - if so, execute command in it
                         // (including nested ssh commands - they should run inside the existing session)
+                        // UNLESS forceNewSession is true AND this is a remote shell command
                         const session = this.getActiveSession();
-                        if (session) {
+                        const shouldForceNew = forceNewSession && isRemoteShellCommand(trimmedCommand);
+                        if (session && !shouldForceNew) {
                             // Execute command in active session
                             if (!session.connected) {
                                 return {
@@ -1043,10 +1051,344 @@ Try running a new command or use //end to close the session.`,
             }
         });
     }
+    setupPromptHandlers() {
+        // List available prompts
+        this.server.setRequestHandler(types_js_1.ListPromptsRequestSchema, async () => {
+            return {
+                prompts: [
+                    {
+                        name: "end-session",
+                        description: "End the current remote shell session or all sessions",
+                        arguments: [
+                            {
+                                name: "sessionId",
+                                description: "Session ID to end, or 'all' to end all sessions. Defaults to active session.",
+                                required: false,
+                            },
+                        ],
+                    },
+                    {
+                        name: "stop",
+                        description: "Send Ctrl+C (SIGINT) to interrupt the current command in the active session",
+                    },
+                    {
+                        name: "session-status",
+                        description: "Show status of all remote shell sessions",
+                    },
+                    {
+                        name: "switch-session",
+                        description: "Switch to a different remote shell session",
+                        arguments: [
+                            {
+                                name: "sessionId",
+                                description: "Session ID to switch to",
+                                required: true,
+                            },
+                        ],
+                    },
+                    {
+                        name: "session-history",
+                        description: "Show command history for a session",
+                        arguments: [
+                            {
+                                name: "sessionId",
+                                description: "Session ID (defaults to active session)",
+                                required: false,
+                            },
+                            {
+                                name: "limit",
+                                description: "Number of commands to show (default: 20)",
+                                required: false,
+                            },
+                        ],
+                    },
+                    {
+                        name: "exit-nested",
+                        description: "Exit a nested shell (inner SSH, sudo, docker exec, etc.) without killing the main session. Sends 'exit' to step back one level.",
+                    },
+                    {
+                        name: "new-session",
+                        description: "Start a new parallel SSH session without running inside the current active session. Use this to connect to multiple machines simultaneously.",
+                        arguments: [
+                            {
+                                name: "command",
+                                description: "The SSH/remote command to run (e.g., 'gcloud compute ssh ...', 'ssh user@host')",
+                                required: true,
+                            },
+                        ],
+                    },
+                ],
+            };
+        });
+        // Handle prompt requests
+        this.server.setRequestHandler(types_js_1.GetPromptRequestSchema, async (request) => {
+            const { name, arguments: args } = request.params;
+            switch (name) {
+                case "end-session": {
+                    const sessionId = args?.sessionId || this.activeSessionId || "";
+                    const session = sessionId === "all" ? null : this.sessions.get(sessionId);
+                    if (sessionId === "all") {
+                        const count = this.sessions.size;
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: `End all ${count} remote shell session(s). Use the remote_session_end tool with sessionId="all" to confirm.`,
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    if (!session && !this.activeSessionId) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: "No active remote session to end.",
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    const targetSession = session || this.sessions.get(this.activeSessionId);
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `End the remote session "${targetSession?.name}" (${targetSession?.id}). Use the remote_session_end tool to confirm.`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                case "stop": {
+                    const activeSession = this.getActiveSession();
+                    if (!activeSession) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: "No active remote session. Nothing to interrupt.",
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `Send Ctrl+C (SIGINT) to interrupt the current command in session "${activeSession.name}". Use the remote_session_signal tool with signal="SIGINT" to confirm.`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                case "session-status": {
+                    const sessionList = Array.from(this.sessions.values());
+                    if (sessionList.length === 0) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: "No active remote sessions. Start a session by running an SSH command through the shell tool.",
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    const statusLines = sessionList.map((s) => {
+                        const active = this.activeSessionId === s.id ? " [ACTIVE]" : "";
+                        const status = s.connected ? "Connected" : "Disconnected";
+                        return `- ${s.name} (${s.id})${active}\n  Status: ${status} | Commands: ${s.commandHistory.length} | Started: ${s.startedAt.toLocaleTimeString()}\n  Original: ${s.originalCommand}`;
+                    });
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `Remote Sessions (${sessionList.length}):\n\n${statusLines.join("\n\n")}`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                case "switch-session": {
+                    const sessionId = args?.sessionId;
+                    if (!sessionId) {
+                        const sessionList = Array.from(this.sessions.values());
+                        const options = sessionList.map(s => `- ${s.id}: ${s.name}`).join("\n");
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: `Please specify a session ID to switch to.\n\nAvailable sessions:\n${options || "No sessions available"}`,
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    const session = this.sessions.get(sessionId);
+                    if (!session) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: `Session not found: ${sessionId}`,
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `Switch to session "${session.name}" (${session.id}). Use the remote_session_switch tool to confirm.`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                case "session-history": {
+                    const sessionId = args?.sessionId;
+                    const limit = args?.limit ? parseInt(args.limit, 10) : 20;
+                    const session = sessionId
+                        ? this.sessions.get(sessionId)
+                        : this.getActiveSession();
+                    if (!session) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: "No session found. Start a remote session first.",
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    const history = session.commandHistory.slice(-limit);
+                    const historyText = history
+                        .map((h, i) => `${i + 1}. ${h.command} (${h.timestamp.toLocaleTimeString()})`)
+                        .join("\n");
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `Command history for ${session.name} (${history.length} commands):\n\n${historyText || "No commands yet."}`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                case "exit-nested": {
+                    const activeSession = this.getActiveSession();
+                    if (!activeSession) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: "No active remote session. Nothing to exit from.",
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `Exit the innermost nested shell in session "${activeSession.name}" (${activeSession.id}).
+
+This is for stepping back from nested shells like:
+- Inner SSH sessions (SSH from one server to another)
+- sudo/su shells
+- docker exec / kubectl exec sessions
+- nix-shell, poetry shell, etc.
+
+Use the shell tool with command="exit" to send the exit command. This will exit one level without killing the entire session.
+
+If you want to completely end the session instead, use the remote_session_end tool.`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                case "new-session": {
+                    const command = args?.command;
+                    if (!command) {
+                        return {
+                            messages: [
+                                {
+                                    role: "user",
+                                    content: {
+                                        type: "text",
+                                        text: "Please provide the SSH/remote command to start a new session with.",
+                                    },
+                                },
+                            ],
+                        };
+                    }
+                    const currentSession = this.getActiveSession();
+                    const currentInfo = currentSession
+                        ? `Current active session: "${currentSession.name}" (${currentSession.id}) - this will remain available.`
+                        : "No current active session.";
+                    return {
+                        messages: [
+                            {
+                                role: "user",
+                                content: {
+                                    type: "text",
+                                    text: `Start a NEW parallel remote session with command: ${command}
+
+${currentInfo}
+
+Use the shell tool with:
+- command="${command}"
+- forceNewSession=true
+
+This will create a new session that runs alongside any existing sessions. You can switch between sessions using the remote_session_switch tool.`,
+                                },
+                            },
+                        ],
+                    };
+                }
+                default:
+                    throw new Error(`Unknown prompt: ${name}`);
+            }
+        });
+    }
     async run() {
         const transport = new stdio_js_1.StdioServerTransport();
         await this.server.connect(transport);
-        console.error("Remote Shell MCP server v2.2 running on stdio");
+        console.error("Remote Shell MCP server v2.3 running on stdio");
     }
 }
 const server = new RemoteShellServer();

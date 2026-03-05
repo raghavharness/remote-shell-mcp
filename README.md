@@ -2,7 +2,7 @@
 
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.2.0-green.svg)](https://github.com/your-repo/mcp-remote-shell)
+[![Version](https://img.shields.io/badge/version-2.3.0-green.svg)](https://github.com/your-repo/mcp-remote-shell)
 
 **Persistent SSH sessions for AI assistants.** Give Claude, GPT, or any MCP-compatible AI the ability to maintain long-running remote shell connections—just like [Warp](https://warp.dev) does for developers.
 
@@ -152,9 +152,28 @@ shell(command="//end")
 | Docker | `docker exec -it` | `docker exec -it container bash` |
 | Vagrant | `vagrant ssh` | `vagrant ssh` |
 
-### Control Sequences
+### MCP Prompts (Recommended)
 
-These special sequences control the session without conflicting with remote commands:
+MCP prompts provide a cleaner way to control sessions. These can be invoked directly by the AI client:
+
+| Prompt | Description |
+|--------|-------------|
+| `end-session` | End the current session or all sessions |
+| `stop` | Send Ctrl+C (SIGINT) to interrupt the current command |
+| `session-status` | Show status of all active sessions |
+| `switch-session` | Switch to a different session |
+| `session-history` | View command history for a session |
+
+**Using prompts in Claude Code:**
+```
+User: Use the end-session prompt
+User: Use the stop prompt to interrupt the command
+User: Show me the session-status prompt
+```
+
+### Control Sequences (Alternative)
+
+These special sequences work inside the `shell` command without conflicting with remote commands:
 
 | Sequence | Action |
 |----------|--------|

@@ -1,6 +1,6 @@
 {
   "name": "mcp-remote-shell",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "MCP server for Warp-like remote shell capabilities in Claude Code",
   "main": "dist/index.js",
   "bin": {
