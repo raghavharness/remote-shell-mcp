@@ -21,3 +21,8 @@ export {
   ErrorAnalysis,
   ErrorType,
 } from "./error-handler.js";
+export { BlockManager, blockManager } from "./blocks.js";
+export { PersistenceManager, persistenceManager } from "./persistence.js";
+export { HeartbeatManager, heartbeatManager, HeartbeatOptions } from "./heartbeat.js";
+export { PaneManager, paneManager } from "./panes.js";
+export { ShareManager, shareManager, ShareServer, shareServer } from "./sharing/index.js";

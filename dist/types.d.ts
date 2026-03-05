@@ -28,6 +28,7 @@ export interface ShellSession {
     outputBuffer: string[];
     commandHistory: CommandHistoryEntry[];
     workingDirectory: string;
+    currentUser: string;
     childProcess?: ChildProcess;
     sshClient?: Client;
     sshStream?: NodeJS.ReadWriteStream;
@@ -102,5 +103,74 @@ export interface ConnectionEvent {
     timestamp: Date;
     data?: string;
     error?: Error;
+}
+export interface OutputBlock {
+    id: string;
+    sessionId: string;
+    command: string;
+    output: string;
+    exitCode?: number;
+    startedAt: Date;
+    completedAt: Date;
+    workingDirectory: string;
+    collapsed: boolean;
+    tags: string[];
+    isError: boolean;
+}
+export interface BlockSearchOptions {
+    sessionId?: string;
+    query: string;
+    regex?: boolean;
+    caseSensitive?: boolean;
+    limit?: number;
+    tags?: string[];
+}
+export interface BlockSearchResult {
+    blockId: string;
+    command: string;
+    matchedText: string;
+    timestamp: Date;
+    context?: string;
+}
+export interface SessionState {
+    workingDirectory: string;
+    environmentVars: Record<string, string>;
+    recentCommands: string[];
+    lastHeartbeat: Date;
+}
+export interface PersistedSession {
+    id: string;
+    persistenceId: string;
+    originalCommand: string;
+    name: string;
+    state: SessionState;
+    createdAt: Date;
+    lastActivity: Date;
+}
+export interface SessionPane {
+    id: string;
+    sessionId: string;
+    name?: string;
+    active: boolean;
+    outputBuffer: string[];
+    commandHistory: CommandHistoryEntry[];
+    workingDirectory: string;
+    childProcess?: import("child_process").ChildProcess;
+    sshStream?: NodeJS.ReadWriteStream;
+    outputListeners: Set<(data: string) => void>;
+}
+export type PaneLayoutType = "single" | "horizontal" | "vertical" | "grid";
+export interface PaneLayout {
+    type: PaneLayoutType;
+    panes: string[];
+}
+export interface SharedSession {
+    shareId: string;
+    sessionId: string;
+    permissions: "view" | "control";
+    expiresAt: Date;
+    password?: string;
+    connectedClients: number;
+    createdAt: Date;
 }
 //# sourceMappingURL=types.d.ts.map

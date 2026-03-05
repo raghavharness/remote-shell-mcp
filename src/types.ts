@@ -31,6 +31,7 @@ export interface ShellSession {
   outputBuffer: string[];
   commandHistory: CommandHistoryEntry[];
   workingDirectory: string;
+  currentUser: string;
   childProcess?: ChildProcess;
   sshClient?: Client;
   sshStream?: NodeJS.ReadWriteStream;
@@ -114,4 +115,98 @@ export interface ConnectionEvent {
   timestamp: Date;
   data?: string;
   error?: Error;
+}
+
+// ============================================================================
+// Block-Based Output (Warp-style)
+// ============================================================================
+
+export interface OutputBlock {
+  id: string;                      // "block-1", "block-2", etc.
+  sessionId: string;
+  command: string;
+  output: string;
+  exitCode?: number;
+  startedAt: Date;
+  completedAt: Date;
+  workingDirectory: string;
+  collapsed: boolean;
+  tags: string[];
+  isError: boolean;
+}
+
+export interface BlockSearchOptions {
+  sessionId?: string;
+  query: string;
+  regex?: boolean;
+  caseSensitive?: boolean;
+  limit?: number;
+  tags?: string[];
+}
+
+export interface BlockSearchResult {
+  blockId: string;
+  command: string;
+  matchedText: string;
+  timestamp: Date;
+  context?: string;
+}
+
+// ============================================================================
+// Session Persistence
+// ============================================================================
+
+export interface SessionState {
+  workingDirectory: string;
+  environmentVars: Record<string, string>;
+  recentCommands: string[];        // Last 10 for replay on reconnect
+  lastHeartbeat: Date;
+}
+
+export interface PersistedSession {
+  id: string;
+  persistenceId: string;           // UUID for disk storage
+  originalCommand: string;
+  name: string;
+  state: SessionState;
+  createdAt: Date;
+  lastActivity: Date;
+}
+
+// ============================================================================
+// Pane Management (tmux-style)
+// ============================================================================
+
+export interface SessionPane {
+  id: string;                      // "pane-0", "pane-1"
+  sessionId: string;
+  name?: string;
+  active: boolean;
+  outputBuffer: string[];
+  commandHistory: CommandHistoryEntry[];
+  workingDirectory: string;
+  childProcess?: import("child_process").ChildProcess;
+  sshStream?: NodeJS.ReadWriteStream;
+  outputListeners: Set<(data: string) => void>;
+}
+
+export type PaneLayoutType = "single" | "horizontal" | "vertical" | "grid";
+
+export interface PaneLayout {
+  type: PaneLayoutType;
+  panes: string[];                 // Pane IDs in order
+}
+
+// ============================================================================
+// Session Sharing
+// ============================================================================
+
+export interface SharedSession {
+  shareId: string;                 // Short unique ID for sharing
+  sessionId: string;
+  permissions: "view" | "control";
+  expiresAt: Date;
+  password?: string;               // Optional protection
+  connectedClients: number;
+  createdAt: Date;
 }

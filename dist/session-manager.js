@@ -6,9 +6,12 @@ import { join } from "path";
 import { stripAnsi } from "./utils/ansi.js";
 import { smartWait } from "./features/smart-wait.js";
 import { directoryTracker } from "./features/directory-tracker.js";
+import { userTracker } from "./features/user-tracker.js";
 import { reconnectManager } from "./features/reconnect.js";
 import { portForwarder } from "./features/port-forward.js";
 import { collectOutput } from "./features/streaming.js";
+import { shareManager } from "./features/sharing/share-manager.js";
+import { shareServer } from "./features/sharing/ws-server.js";
 // Stale session timeout (1 hour in milliseconds)
 const STALE_SESSION_TIMEOUT_MS = 60 * 60 * 1000;
 export class SessionManager {
@@ -108,6 +111,7 @@ export class SessionManager {
             outputBuffer: [],
             commandHistory: [],
             workingDirectory: "~",
+            currentUser: "user",
             childProcess: childProc,
             portForwards: [],
             reconnectAttempts: 0,
@@ -117,8 +121,9 @@ export class SessionManager {
             outputListeners: new Set(),
             pendingOutput: "",
         };
-        // Initialize directory tracking
+        // Initialize directory and user tracking
         directoryTracker.initSession(sessionId, "~");
+        userTracker.initSession(sessionId, "user");
         childProc.stdout?.on("data", (data) => {
             const dataStr = data.toString();
             session.outputBuffer.push(dataStr);
@@ -133,6 +138,11 @@ export class SessionManager {
                 }
                 catch { }
             }
+            // Broadcast to share viewers if session is shared
+            const share = shareManager.getShareForSession(sessionId);
+            if (share) {
+                shareServer.broadcastOutput(share.shareId, dataStr);
+            }
         });
         childProc.stderr?.on("data", (data) => {
             const dataStr = data.toString();
@@ -145,9 +155,19 @@ export class SessionManager {
                 }
                 catch { }
             }
+            // Broadcast to share viewers if session is shared (mark as stderr for red coloring)
+            const share = shareManager.getShareForSession(sessionId);
+            if (share) {
+                shareServer.broadcastOutput(share.shareId, dataStr, true);
+            }
         });
         childProc.on("close", () => {
             session.connected = false;
+            // Notify share clients that session disconnected
+            const share = shareManager.getShareForSession(sessionId);
+            if (share) {
+                shareServer.broadcastSessionEnded(share.shareId, "Remote session disconnected");
+            }
         });
         childProc.on("error", (err) => {
             session.outputBuffer.push(`Error: ${err.message}\n`);
@@ -166,8 +186,11 @@ export class SessionManager {
             const cleanup = reconnectManager.startMonitoring(session);
             this.monitoringCleanups.set(sessionId, cleanup);
         }
-        // Try to get initial working directory
+        // Set TERM environment variable on the remote shell for proper terminal support
+        await this.setRemoteTerm(session);
+        // Try to get initial working directory and user
         await this.updateWorkingDirectory(session);
+        await this.updateCurrentUser(session);
         return session;
     }
     /**
@@ -219,6 +242,7 @@ export class SessionManager {
                 outputBuffer: [],
                 commandHistory: [],
                 workingDirectory: "~",
+                currentUser: username,
                 sshClient: client,
                 portForwards: [],
                 reconnectAttempts: 0,
@@ -228,8 +252,9 @@ export class SessionManager {
                 outputListeners: new Set(),
                 pendingOutput: "",
             };
-            // Initialize directory tracking
+            // Initialize directory and user tracking
             directoryTracker.initSession(sessionId, "~");
+            userTracker.initSession(sessionId, username);
             client.on("ready", async () => {
                 session.connected = true;
                 this.sessions.set(sessionId, session);
@@ -250,6 +275,11 @@ export class SessionManager {
             client.on("error", (err) => reject(err));
             client.on("close", () => {
                 session.connected = false;
+                // Notify share clients that session disconnected
+                const share = shareManager.getShareForSession(sessionId);
+                if (share) {
+                    shareServer.broadcastSessionEnded(share.shareId, "SSH connection closed");
+                }
             });
             client.connect(connectConfig);
         });
@@ -287,8 +317,15 @@ export class SessionManager {
                     if (session.commandHistory.length > 100) {
                         session.commandHistory.shift();
                     }
-                    // Update directory tracking
+                    // Update directory and user tracking
                     directoryTracker.updateFromCommand(session, command, output);
+                    userTracker.updateFromCommand(session, command, output);
+                    session.currentUser = userTracker.getCurrentUser(session.id);
+                    // Broadcast command completion to share clients
+                    const share = shareManager.getShareForSession(session.id);
+                    if (share) {
+                        shareServer.broadcastCommandComplete(share.shareId);
+                    }
                     resolve(output);
                 });
                 stream.on("data", (data) => {
@@ -301,6 +338,11 @@ export class SessionManager {
                         }
                         catch { }
                     }
+                    // Broadcast to share viewers if session is shared
+                    const share = shareManager.getShareForSession(session.id);
+                    if (share) {
+                        shareServer.broadcastOutput(share.shareId, dataStr);
+                    }
                 });
                 stream.stderr.on("data", (data) => {
                     const dataStr = data.toString();
@@ -311,6 +353,11 @@ export class SessionManager {
                             listener(dataStr);
                         }
                         catch { }
+                    }
+                    // Broadcast to share viewers if session is shared (mark as stderr for red coloring)
+                    const share = shareManager.getShareForSession(session.id);
+                    if (share) {
+                        shareServer.broadcastOutput(share.shareId, dataStr, true);
                     }
                 });
             });
@@ -345,17 +392,27 @@ export class SessionManager {
         if (session.commandHistory.length > 100) {
             session.commandHistory.shift();
         }
-        // Update directory tracking
+        // Update directory and user tracking
         directoryTracker.updateFromCommand(session, command, fullOutput);
+        userTracker.updateFromCommand(session, command, fullOutput);
+        session.currentUser = userTracker.getCurrentUser(session.id);
+        // Broadcast command completion to share clients
+        const share = shareManager.getShareForSession(session.id);
+        if (share) {
+            shareServer.broadcastCommandComplete(share.shareId);
+        }
         return fullOutput;
     }
     /**
-     * Send interrupt signal to session
+     * Send interrupt signal to session (Ctrl+C)
+     * Only writes \x03 to stdin - does NOT send SIGINT to child process
+     * as that would kill the SSH connection instead of the remote command
      */
     async sendInterrupt(session) {
         if (session.type === "child_process" && session.childProcess) {
+            // Write Ctrl+C character to stdin - this gets forwarded to the remote shell
+            // which will then send SIGINT to the remote foreground process
             session.childProcess.stdin?.write("\x03");
-            session.childProcess.kill("SIGINT");
             session.lastActivity = new Date();
             await this.sleep(500);
             return session.outputBuffer.slice(-5).join("");
@@ -383,6 +440,13 @@ export class SessionManager {
         const session = this.sessions.get(sessionId);
         if (!session)
             return false;
+        // Notify share clients that session is ending
+        const share = shareManager.getShareForSession(sessionId);
+        if (share) {
+            shareServer.broadcastSessionEnded(share.shareId, "Session ended");
+            // Remove the share
+            shareManager.removeShare(share.shareId);
+        }
         // Stop port forwards
         await portForwarder.stopAllForwards(session);
         // Stop monitoring
@@ -393,8 +457,9 @@ export class SessionManager {
         }
         // Stop reconnection attempts
         reconnectManager.stopReconnect(sessionId);
-        // Clean up directory tracking
+        // Clean up directory and user tracking
         directoryTracker.removeSession(sessionId);
+        userTracker.removeSession(sessionId);
         // Clear output listeners
         session.outputListeners.clear();
         // Terminate the session
@@ -426,6 +491,21 @@ export class SessionManager {
         return count;
     }
     /**
+     * Set TERM environment variable on the remote shell
+     */
+    async setRemoteTerm(session) {
+        try {
+            if (session.type === "child_process" && session.childProcess?.stdin) {
+                // Send export command to set TERM for proper terminal support (clear, colors, etc.)
+                session.childProcess.stdin.write("export TERM=xterm-256color 2>/dev/null\n");
+                await this.sleep(300);
+                // Clear the output buffer so this setup command doesn't appear in user output
+                session.outputBuffer = [];
+            }
+        }
+        catch { }
+    }
+    /**
      * Update working directory by running pwd
      */
     async updateWorkingDirectory(session) {
@@ -440,6 +520,34 @@ export class SessionManager {
                     if (line.startsWith("/") || line.startsWith("~")) {
                         session.workingDirectory = line.trim();
                         directoryTracker.updateFromPwd(session.id, line);
+                        break;
+                    }
+                }
+            }
+        }
+        catch { }
+    }
+    /**
+     * Update current user by running whoami
+     */
+    async updateCurrentUser(session) {
+        try {
+            if (session.type === "child_process" && session.childProcess?.stdin) {
+                session.outputBuffer = [];
+                session.childProcess.stdin.write("whoami\n");
+                await this.sleep(1000);
+                const output = stripAnsi(session.outputBuffer.join("")).trim();
+                const lines = output.split("\n");
+                for (const line of lines) {
+                    const trimmed = line.trim();
+                    // Skip command echo and prompts
+                    if (trimmed === "whoami" || trimmed.includes("$") || trimmed.includes("#")) {
+                        continue;
+                    }
+                    // Valid username: alphanumeric, underscore, hyphen
+                    if (/^[a-z_][a-z0-9_-]*$/.test(trimmed)) {
+                        session.currentUser = trimmed;
+                        userTracker.setCurrentUser(session.id, trimmed);
                         break;
                     }
                 }

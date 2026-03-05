@@ -1,5 +1,8 @@
 import { sessionManager } from "../session-manager.js";
 import { directoryTracker } from "../features/directory-tracker.js";
+import { blockManager } from "../features/blocks.js";
+import { paneManager } from "../features/panes.js";
+import { shareManager } from "../features/sharing/share-manager.js";
 // Prompt aliases - map alternative names to canonical prompts
 const PROMPT_ALIASES = {
     // Exit session aliases (matches //end, //exit, //quit, //close, //disconnect, ~.)
@@ -224,6 +227,134 @@ export function getPromptDefinitions() {
                     required: true,
                 },
             ],
+        },
+        // === BLOCKS (Warp-style) ===
+        {
+            name: "blocks",
+            description: "List recent command blocks for the active session",
+            arguments: [
+                {
+                    name: "limit",
+                    description: "Number of blocks to show (default: 10)",
+                    required: false,
+                },
+            ],
+        },
+        {
+            name: "block",
+            description: "Get a specific block by ID",
+            arguments: [
+                {
+                    name: "blockId",
+                    description: "Block ID (e.g., block-1)",
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: "block-search",
+            description: "Search through command blocks",
+            arguments: [
+                {
+                    name: "query",
+                    description: "Search query",
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: "block-errors",
+            description: "Find error blocks in session history",
+        },
+        {
+            name: "block-tag",
+            description: "Tag a block for organization",
+            arguments: [
+                {
+                    name: "blockId",
+                    description: "Block ID",
+                    required: true,
+                },
+                {
+                    name: "tags",
+                    description: "Comma-separated tags to add",
+                    required: true,
+                },
+            ],
+        },
+        // === PANES (tmux-style) ===
+        {
+            name: "split",
+            description: "Split the current pane horizontally or vertically",
+            arguments: [
+                {
+                    name: "direction",
+                    description: "Split direction: horizontal or vertical",
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: "panes",
+            description: "List all panes in the current session",
+        },
+        {
+            name: "pane-focus",
+            description: "Switch to a specific pane",
+            arguments: [
+                {
+                    name: "paneId",
+                    description: "Pane ID to focus",
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: "pane-close",
+            description: "Close a pane",
+            arguments: [
+                {
+                    name: "paneId",
+                    description: "Pane ID to close",
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: "broadcast",
+            description: "Broadcast a command to all panes",
+            arguments: [
+                {
+                    name: "command",
+                    description: "Command to broadcast",
+                    required: true,
+                },
+            ],
+        },
+        // === SHARING ===
+        {
+            name: "share",
+            description: "Share the current session for collaboration",
+            arguments: [
+                {
+                    name: "permissions",
+                    description: "Permission level: view or control",
+                    required: false,
+                },
+                {
+                    name: "password",
+                    description: "Optional password protection",
+                    required: false,
+                },
+            ],
+        },
+        {
+            name: "unshare",
+            description: "Stop sharing the current session",
+        },
+        {
+            name: "shares",
+            description: "List all active session shares",
         },
     ];
 }
@@ -851,6 +982,445 @@ Use the remote_session_errors tool to find error messages in command history.`,
                             text: `Search command history for: "${query}"
 
 Use the remote_session_search tool with query="${query}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        // === BLOCKS ===
+        case "blocks": {
+            const limit = args?.limit ? parseInt(args.limit, 10) : 10;
+            const activeSession = sessionManager.getActiveSession();
+            if (!activeSession) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "No active session. Start a remote session first.",
+                            },
+                        },
+                    ],
+                };
+            }
+            const blockCount = blockManager.getBlockCount(activeSession.id);
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `List recent command blocks for session "${activeSession.name}" (${blockCount} total blocks).
+
+Use the remote_blocks_list tool with limit=${limit}.`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "block": {
+            const blockId = args?.blockId;
+            if (!blockId) {
+                // List recent blocks to help user choose
+                const activeSession = sessionManager.getActiveSession();
+                const recentBlocks = activeSession
+                    ? blockManager.getSessionBlocks(activeSession.id, 5)
+                    : blockManager.getRecentBlocks(5);
+                const blockList = recentBlocks.map(b => `- ${b.id}: ${b.command.substring(0, 50)}`).join("\n");
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: `Please specify a block ID.
+
+Recent blocks:
+${blockList || "No blocks yet."}`,
+                            },
+                        },
+                    ],
+                };
+            }
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Get block: ${blockId}
+
+Use the remote_block_get tool with blockId="${blockId}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "block-search": {
+            const query = args?.query;
+            if (!query) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "Please provide a search query for block search.",
+                            },
+                        },
+                    ],
+                };
+            }
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Search blocks for: "${query}"
+
+Use the remote_blocks_search tool with query="${query}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "block-errors": {
+            const activeSession = sessionManager.getActiveSession();
+            const errorBlocks = activeSession
+                ? blockManager.findErrorBlocks(activeSession.id)
+                : blockManager.findErrorBlocks();
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Find error blocks${activeSession ? ` in session "${activeSession.name}"` : ""} (${errorBlocks.length} errors found).
+
+Use the remote_blocks_errors tool.`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "block-tag": {
+            const blockId = args?.blockId;
+            const tagsStr = args?.tags;
+            if (!blockId || !tagsStr) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "Please provide both blockId and tags (comma-separated).",
+                            },
+                        },
+                    ],
+                };
+            }
+            const tags = tagsStr.split(",").map(t => t.trim());
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Tag block ${blockId} with: ${tags.join(", ")}
+
+Use the remote_block_tag tool with blockId="${blockId}" and tags=${JSON.stringify(tags)}.`,
+                        },
+                    },
+                ],
+            };
+        }
+        // === PANES ===
+        case "split": {
+            const direction = args?.direction;
+            if (!direction || !["horizontal", "vertical"].includes(direction)) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "Please specify direction: horizontal or vertical",
+                            },
+                        },
+                    ],
+                };
+            }
+            const activeSession = sessionManager.getActiveSession();
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Split pane ${direction}ly${activeSession ? ` in session "${activeSession.name}"` : ""}.
+
+Use the remote_pane_split tool with direction="${direction}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "panes": {
+            const activeSession = sessionManager.getActiveSession();
+            if (!activeSession) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "No active session. Start a remote session first.",
+                            },
+                        },
+                    ],
+                };
+            }
+            const paneCount = paneManager.getPaneCount(activeSession.id);
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `List panes for session "${activeSession.name}" (${paneCount} pane(s)).
+
+Use the remote_pane_list tool.`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "pane-focus": {
+            const paneId = args?.paneId;
+            if (!paneId) {
+                const activeSession = sessionManager.getActiveSession();
+                const panes = activeSession
+                    ? paneManager.getSessionPanes(activeSession.id)
+                    : [];
+                const paneList = panes.map(p => `- ${p.id}${p.active ? " [active]" : ""}`).join("\n");
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: `Please specify a pane ID.
+
+Available panes:
+${paneList || "No panes available."}`,
+                            },
+                        },
+                    ],
+                };
+            }
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Focus pane: ${paneId}
+
+Use the remote_pane_focus tool with paneId="${paneId}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "pane-close": {
+            const paneId = args?.paneId;
+            if (!paneId) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "Please specify a pane ID to close.",
+                            },
+                        },
+                    ],
+                };
+            }
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Close pane: ${paneId}
+
+Use the remote_pane_close tool with paneId="${paneId}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "broadcast": {
+            const command = args?.command;
+            if (!command) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "Please provide a command to broadcast.",
+                            },
+                        },
+                    ],
+                };
+            }
+            const activeSession = sessionManager.getActiveSession();
+            const paneCount = activeSession
+                ? paneManager.getPaneCount(activeSession.id)
+                : 0;
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Broadcast command to ${paneCount} pane(s): ${command}
+
+Use the remote_pane_broadcast tool with command="${command}".`,
+                        },
+                    },
+                ],
+            };
+        }
+        // === SHARING ===
+        case "share": {
+            const permissions = args?.permissions || "view";
+            const password = args?.password;
+            const activeSession = sessionManager.getActiveSession();
+            if (!activeSession) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "No active session to share. Start a remote session first.",
+                            },
+                        },
+                    ],
+                };
+            }
+            const existingShare = shareManager.getShareForSession(activeSession.id);
+            if (existingShare) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: `Session "${activeSession.name}" is already shared.
+
+Share ID: ${existingShare.shareId}
+Permissions: ${existingShare.permissions}
+Clients: ${existingShare.connectedClients}
+
+Use remote_session_unshare to stop sharing, or remote_share_update to modify.`,
+                            },
+                        },
+                    ],
+                };
+            }
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Share session "${activeSession.name}" with ${permissions} permissions${password ? " (password protected)" : ""}.
+
+Use the remote_session_share tool with permissions="${permissions}"${password ? `, password="${password}"` : ""}.`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "unshare": {
+            const activeSession = sessionManager.getActiveSession();
+            if (!activeSession) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "No active session.",
+                            },
+                        },
+                    ],
+                };
+            }
+            const share = shareManager.getShareForSession(activeSession.id);
+            if (!share) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: `Session "${activeSession.name}" is not currently shared.`,
+                            },
+                        },
+                    ],
+                };
+            }
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Stop sharing session "${activeSession.name}" (${share.connectedClients} connected client(s)).
+
+Use the remote_session_unshare tool.`,
+                        },
+                    },
+                ],
+            };
+        }
+        case "shares": {
+            const allShares = shareManager.getAllShares();
+            if (allShares.length === 0) {
+                return {
+                    messages: [
+                        {
+                            role: "user",
+                            content: {
+                                type: "text",
+                                text: "No active shares. Use the share prompt to start sharing a session.",
+                            },
+                        },
+                    ],
+                };
+            }
+            const shareList = allShares.map(s => {
+                const session = sessionManager.getSession(s.sessionId);
+                return `- ${s.shareId}: ${session?.name || s.sessionId} (${s.permissions}, ${s.connectedClients} clients)`;
+            }).join("\n");
+            return {
+                messages: [
+                    {
+                        role: "user",
+                        content: {
+                            type: "text",
+                            text: `Active shares (${allShares.length}):
+
+${shareList}
+
+Use remote_shares_list for more details.`,
                         },
                     },
                 ],

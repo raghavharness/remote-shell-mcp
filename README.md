@@ -2,22 +2,19 @@
 
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/raghavharness/remote-shell-mcp)
+[![Version](https://img.shields.io/badge/version-4.0.0-green.svg)](https://github.com/raghavharness/remote-shell-mcp)
 
 **Persistent SSH sessions for AI assistants.** Give Claude, GPT, or any MCP-compatible AI the ability to maintain long-running remote shell connections—just like [Warp](https://warp.dev) does for developers.
 
-## What's New in v3.0
+## What's New in v4.0
 
 | Feature | Description |
 |---------|-------------|
-| **File Transfer** | Upload/download files via SFTP or base64 encoding |
-| **Port Forwarding** | Local and remote port forwards (SSH -L/-R style) |
-| **Smart Wait Time** | Auto-adjusts command timeout based on command type |
-| **Working Directory Tracking** | Shows current directory in prompts |
-| **Auto-Reconnect** | Automatically attempts to reconnect on disconnection |
-| **Output Search** | Search through command history and output |
-| **Streaming Output** | Real-time output for long-running commands |
-| **Modular Architecture** | Clean separation of concerns for maintainability |
+| **Block-Based Output** | Warp-style command blocks with search, tagging, and copy |
+| **Pane Management** | tmux-style split panes for multi-view sessions |
+| **Session Sharing** | Real-time collaboration with shareable URLs |
+| **Enhanced Persistence** | Session state persistence and faster reconnection |
+| **Heartbeat Monitoring** | Faster disconnect detection |
 
 ## The Problem
 
@@ -47,6 +44,7 @@ AI: [runs: tail -f app.log]       # Can run interactive commands
 AI: [sends: Ctrl+C]               # Can send signals
 AI: [downloads: error.log]        # Can transfer files
 AI: [forwards: 5432 → postgres]   # Can forward ports
+AI: [shares session]              # Collaborate in real-time
 AI: [ends session]                # Explicit close when done
 ```
 
@@ -62,6 +60,16 @@ AI: [ends session]                # Explicit close when done
 | **Multiple Sessions** | Run concurrent connections with easy switching |
 | **Signal Support** | Send Ctrl+C (SIGINT), SIGTERM, SIGKILL |
 | **Auto-Cleanup** | Stale sessions cleaned up after 1 hour |
+
+### v4.0 Features
+
+| Feature | Description |
+|---------|-------------|
+| **Blocks** | Every command creates a searchable, taggable block |
+| **Panes** | Split view with broadcast commands |
+| **Sharing** | Real-time session collaboration |
+| **Persistence** | State saved to disk for recovery |
+| **Heartbeat** | Fast disconnect detection |
 
 ### v3.0 Features
 
@@ -136,6 +144,77 @@ shell(command="//stop")
 shell(command="//end")
 ```
 
+### Block-Based Output (NEW in v4.0)
+
+Every command creates a block that can be referenced later:
+
+```bash
+# List recent blocks
+remote_blocks_list(limit=10)
+
+# Get a specific block
+remote_block_get(blockId="block-5")
+
+# Search through blocks
+remote_blocks_search(query="error")
+
+# Copy just the output (no command)
+remote_block_copy(blockId="block-5")
+
+# Tag blocks for organization
+remote_block_tag(blockId="block-5", tags=["important", "debug"])
+
+# Find error blocks
+remote_blocks_errors()
+```
+
+### Pane Management (NEW in v4.0)
+
+tmux-style panes within a session:
+
+```bash
+# Split the current pane
+remote_pane_split(direction="horizontal")
+remote_pane_split(direction="vertical")
+
+# List panes
+remote_pane_list()
+
+# Switch to a pane
+remote_pane_focus(paneId="pane-1")
+
+# Run command in specific pane (without switching)
+remote_pane_exec(paneId="pane-1", command="tail -f /var/log/app.log")
+
+# Broadcast command to ALL panes
+remote_pane_broadcast(command="uptime")
+
+# Close a pane
+remote_pane_close(paneId="pane-1")
+```
+
+### Session Sharing (NEW in v4.0)
+
+Share sessions for real-time collaboration:
+
+```bash
+# Share the current session
+remote_session_share(permissions="view")
+# Returns: http://localhost:3847/share/abc123
+
+# Share with control access and password
+remote_session_share(permissions="control", password="secret123")
+
+# List active shares
+remote_shares_list()
+
+# Update share settings
+remote_share_update(shareId="abc123", permissions="control")
+
+# Stop sharing
+remote_session_unshare()
+```
+
 ### File Transfer
 
 ```bash
@@ -165,16 +244,6 @@ remote_port_list()
 remote_port_stop(forwardId="fwd-1")
 ```
 
-### Output Search
-
-```bash
-# Search command history:
-remote_session_search(query="error", includeOutput=true)
-
-# Find error messages:
-remote_session_errors()
-```
-
 ### Supported Connection Types
 
 | Type | Pattern | Example |
@@ -188,7 +257,7 @@ remote_session_errors()
 
 ### Control Sequences & MCP Prompts
 
-Every control sequence has a corresponding MCP prompt (and aliases):
+Every control sequence has a corresponding MCP prompt:
 
 #### Exit Session
 
@@ -196,49 +265,47 @@ Every control sequence has a corresponding MCP prompt (and aliases):
 |----------|------------|---------|
 | `~.` | `end-session` | `end`, `exit`, `quit`, `close`, `disconnect` |
 | `//end` | `end-session` | |
-| `//exit` | `exit` | |
-| `//quit` | `quit` | |
-| `//close` | `close` | |
-| `//disconnect` | `disconnect` | |
 
 #### Interrupt Command
 
 | Sequence | MCP Prompt | Aliases |
 |----------|------------|---------|
 | `//stop` | `stop` | `kill`, `interrupt`, `ctrl-c` |
-| `//kill` | `kill` | |
-| `//interrupt` | `interrupt` | |
-| `//ctrl-c` | `ctrl-c` | |
-| `~c` | `stop` | |
 
-### All MCP Prompts (27)
+#### Blocks
 
-| Prompt | Description |
-|--------|-------------|
-| `end-session` | End session (aliases: `end`, `exit`, `quit`, `close`, `disconnect`) |
-| `stop` | Send Ctrl+C (aliases: `kill`, `interrupt`, `ctrl-c`) |
-| `session-status` | Show all sessions |
-| `switch-session` | Switch to different session |
-| `session-history` | View command history |
-| `exit-nested` | Exit inner shell without killing session |
-| `new-session` | Start parallel session |
-| `pwd` | Show tracked working directory |
-| `reconnect` | Manual reconnection help |
-| `upload-file` | Upload file to remote |
-| `download-file` | Download file from remote |
-| `list-files` | List remote directory |
-| `port-forward` | Set up local port forward |
-| `list-ports` | List active port forwards |
-| `stop-port` | Stop a port forward |
-| `stop-all-ports` | Stop all port forwards |
-| `find-errors` | Find error messages in history |
-| `search-output` | Search command history |
+| MCP Prompt | Description |
+|------------|-------------|
+| `blocks` | List recent command blocks |
+| `block` | Get a specific block |
+| `block-search` | Search through blocks |
+| `block-errors` | Find error blocks |
+| `block-tag` | Tag a block |
 
-### All Tools (18)
+#### Panes
+
+| MCP Prompt | Description |
+|------------|-------------|
+| `split` | Split current pane |
+| `panes` | List panes |
+| `pane-focus` | Switch to pane |
+| `pane-close` | Close a pane |
+| `broadcast` | Broadcast command to all panes |
+
+#### Sharing
+
+| MCP Prompt | Description |
+|------------|-------------|
+| `share` | Share current session |
+| `unshare` | Stop sharing |
+| `shares` | List active shares |
+
+### All Tools (34)
 
 | Tool | Purpose |
 |------|---------|
-| `shell` | **Primary tool** - execute commands, auto-detect sessions |
+| **Core** | |
+| `shell` | Primary tool - execute commands, auto-detect sessions |
 | `remote_session_start` | Start session with explicit parameters |
 | `remote_session_status` | List all sessions with details |
 | `remote_session_switch` | Switch between sessions |
@@ -248,14 +315,41 @@ Every control sequence has a corresponding MCP prompt (and aliases):
 | `remote_session_signal` | Send signals |
 | `remote_session_search` | Search history/output |
 | `remote_session_errors` | Find error messages |
+| **Files** | |
 | `remote_file_upload` | Upload file to remote |
 | `remote_file_download` | Download file from remote |
 | `remote_file_list` | List remote directory |
+| **Ports** | |
 | `remote_port_forward_local` | Start local port forward |
 | `remote_port_forward_remote` | Start remote port forward |
 | `remote_port_list` | List port forwards |
 | `remote_port_stop` | Stop port forward |
 | `remote_port_stop_all` | Stop all port forwards |
+| **Blocks (v4.0)** | |
+| `remote_blocks_list` | List command blocks |
+| `remote_block_get` | Get specific block |
+| `remote_blocks_search` | Search blocks |
+| `remote_block_copy` | Copy block output |
+| `remote_block_tag` | Tag a block |
+| `remote_block_untag` | Remove block tags |
+| `remote_block_collapse` | Toggle block collapsed |
+| `remote_blocks_errors` | Find error blocks |
+| **Panes (v4.0)** | |
+| `remote_pane_split` | Split pane |
+| `remote_pane_focus` | Focus pane |
+| `remote_pane_close` | Close pane |
+| `remote_pane_list` | List panes |
+| `remote_pane_exec` | Execute in specific pane |
+| `remote_pane_broadcast` | Broadcast to all panes |
+| `remote_pane_rename` | Rename pane |
+| `remote_pane_next` | Focus next pane |
+| **Sharing (v4.0)** | |
+| `remote_session_share` | Share session |
+| `remote_session_unshare` | Stop sharing |
+| `remote_shares_list` | List shares |
+| `remote_share_update` | Update share settings |
+| `remote_share_server_start` | Start share server |
+| `remote_share_server_stop` | Stop share server |
 
 ## Smart Wait Time
 
@@ -284,21 +378,24 @@ Claude: [shell: gcloud compute ssh prod-server --project myapp]
 
 Claude: [shell: top -bn1 | head -20]
         CPU at 95%! Checking what's using it...
+        [block-1]
 
 Claude: [shell: ps aux --sort=-%cpu | head -10]
         App process using 92% CPU.
+        [block-2]
 
-Claude: [shell: cd /var/log/myapp]
-        [prod-server] /var/log/myapp $
+Claude: [remote_blocks_search: query="error"]
+        Found 3 matches in block history...
 
-Claude: [remote_session_search: query="error"]
-        Found 3 matches in history...
+Claude: [remote_pane_split: direction="horizontal"]
+        Split into 2 panes for monitoring
 
-Claude: [shell: tail -100 error.log]
-        Found infinite loop in payment processor!
+Claude: [remote_pane_exec: paneId="pane-1", command="tail -f /var/log/app.log"]
+        Watching logs in pane-1...
 
-Claude: [remote_file_download: remotePath="error.log", localPath="./error.log"]
-        Downloaded 15KB
+Claude: [remote_session_share: permissions="view"]
+        Shared session: http://localhost:3847/share/xyz789
+        (Ops team can watch live)
 
 Claude: [shell: sudo systemctl restart myapp]
         Service restarted.
@@ -310,22 +407,29 @@ Claude: [shell: //end]
 ## Architecture
 
 ```
-┌─────────────────┐     ┌───────────────────────────┐     ┌─────────────────┐
-│   AI Client     │────▶│    Remote Shell MCP       │────▶│  Remote Server  │
-│ (Claude Code)   │ MCP │         Server            │     │  (SSH/gcloud)   │
-└─────────────────┘     └───────────────────────────┘     └─────────────────┘
+┌─────────────────┐     ┌───────────────────────────────┐     ┌─────────────────┐
+│   AI Client     │────▶│      Remote Shell MCP         │────▶│  Remote Server  │
+│ (Claude Code)   │ MCP │          Server               │     │  (SSH/gcloud)   │
+└─────────────────┘     └───────────────────────────────┘     └─────────────────┘
                                     │
                         ┌───────────┴───────────┐
                         ▼                       ▼
                 ┌───────────────┐       ┌───────────────┐
                 │Session Manager│       │   Features    │
-                │ - Sessions    │       │ - FileTransfer│
-                │ - History     │       │ - PortForward │
-                │ - Output      │       │ - SmartWait   │
-                └───────────────┘       │ - DirTracker  │
-                                        │ - Reconnect   │
-                                        │ - Search      │
+                │ - Sessions    │       │ - Blocks      │
+                │ - Panes       │       │ - Persistence │
+                │ - History     │       │ - Sharing     │
+                └───────────────┘       │ - FileTransfer│
+                                        │ - PortForward │
+                                        │ - SmartWait   │
                                         └───────────────┘
+                                                │
+                                        ┌───────┴───────┐
+                                        ▼               ▼
+                                ┌───────────┐   ┌───────────┐
+                                │ WebSocket │   │ Web Client│
+                                │  Server   │──▶│ (Browser) │
+                                └───────────┘   └───────────┘
 ```
 
 ### Module Structure
@@ -336,6 +440,13 @@ src/
 ├── session-manager.ts    # Session lifecycle management
 ├── types.ts              # TypeScript interfaces
 ├── features/
+│   ├── blocks.ts         # Block-based output (v4.0)
+│   ├── panes.ts          # Pane management (v4.0)
+│   ├── persistence.ts    # Session persistence (v4.0)
+│   ├── heartbeat.ts      # Connection monitoring (v4.0)
+│   ├── sharing/          # Session sharing (v4.0)
+│   │   ├── share-manager.ts
+│   │   └── ws-server.ts
 │   ├── file-transfer.ts  # SFTP/SCP operations
 │   ├── port-forward.ts   # Port forwarding
 │   ├── smart-wait.ts     # Command timeout logic
@@ -347,11 +458,15 @@ src/
 │   ├── shell.ts          # Main shell tool
 │   ├── session-tools.ts  # Session management
 │   ├── file-tools.ts     # File transfer tools
-│   └── port-tools.ts     # Port forward tools
+│   ├── port-tools.ts     # Port forward tools
+│   ├── block-tools.ts    # Block tools (v4.0)
+│   ├── pane-tools.ts     # Pane tools (v4.0)
+│   └── share-tools.ts    # Share tools (v4.0)
 ├── prompts/
 │   └── index.ts          # MCP prompts
 └── utils/
     ├── ansi.ts           # Terminal formatting
+    ├── terminal-ui.ts    # UI helpers
     └── patterns.ts       # Command detection
 ```
 
@@ -396,10 +511,16 @@ TEST_SSH_HOST=myserver TEST_SSH_USER=myuser npm test
 - Ensure local port is available
 - Check remote service is running
 
+### Share server issues
+
+- Default port is 3847
+- Use `remote_share_server_start(port=XXXX)` to use a different port
+- Check firewall allows connections
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Keywords**: MCP, Model Context Protocol, SSH, remote shell, AI tools, Claude, persistent sessions, terminal, DevOps, SFTP, port forwarding, cloud computing
+**Keywords**: MCP, Model Context Protocol, SSH, remote shell, AI tools, Claude, persistent sessions, terminal, DevOps, SFTP, port forwarding, cloud computing, tmux, panes, blocks, collaboration, sharing

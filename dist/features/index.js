@@ -7,4 +7,9 @@ export { PortForwarder, portForwarder } from "./port-forward.js";
 export { ReconnectManager, reconnectManager } from "./reconnect.js";
 export { OutputStreamer, outputStreamer, streamOutput, collectOutput, waitForPattern, } from "./streaming.js";
 export { errorHandler, analyzeError, isAutoFixable, getSuggestedFix, } from "./error-handler.js";
+export { BlockManager, blockManager } from "./blocks.js";
+export { PersistenceManager, persistenceManager } from "./persistence.js";
+export { HeartbeatManager, heartbeatManager } from "./heartbeat.js";
+export { PaneManager, paneManager } from "./panes.js";
+export { ShareManager, shareManager, ShareServer, shareServer } from "./sharing/index.js";
 //# sourceMappingURL=index.js.map

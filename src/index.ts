@@ -36,6 +36,31 @@ import {
   handleStopPortForward,
   handleStopAllPortForwards,
   getPortToolDefinitions,
+  handleBlocksList,
+  handleBlockGet,
+  handleBlocksSearch,
+  handleBlockCopy,
+  handleBlockTag,
+  handleBlockUntag,
+  handleBlockCollapse,
+  handleBlocksErrors,
+  getBlockToolDefinitions,
+  handlePaneSplit,
+  handlePaneFocus,
+  handlePaneClose,
+  handlePaneList,
+  handlePaneExec,
+  handlePaneBroadcast,
+  handlePaneRename,
+  handlePaneNext,
+  getPaneToolDefinitions,
+  handleSessionShare,
+  handleSessionUnshare,
+  handleSharesList,
+  handleShareUpdate,
+  handleShareServerStart,
+  handleShareServerStop,
+  getShareToolDefinitions,
 } from "./tools/index.js";
 
 // Prompts
@@ -44,7 +69,7 @@ import { getPromptDefinitions, handlePrompt } from "./prompts/index.js";
 // Features
 import { directoryTracker } from "./features/directory-tracker.js";
 
-const VERSION = "3.0.0";
+const VERSION = "4.0.0";
 
 class RemoteShellServer {
   private server: Server;
@@ -75,6 +100,9 @@ class RemoteShellServer {
         ...getSessionToolDefinitions(),
         ...getFileToolDefinitions(),
         ...getPortToolDefinitions(),
+        ...getBlockToolDefinitions(),
+        ...getPaneToolDefinitions(),
+        ...getShareToolDefinitions(),
       ],
     }));
 
@@ -142,6 +170,75 @@ class RemoteShellServer {
 
           case "remote_port_stop_all":
             return await handleStopAllPortForwards(params as any);
+
+          // Block tools
+          case "remote_blocks_list":
+            return await handleBlocksList(params as any);
+
+          case "remote_block_get":
+            return await handleBlockGet(params as any);
+
+          case "remote_blocks_search":
+            return await handleBlocksSearch(params as any);
+
+          case "remote_block_copy":
+            return await handleBlockCopy(params as any);
+
+          case "remote_block_tag":
+            return await handleBlockTag(params as any);
+
+          case "remote_block_untag":
+            return await handleBlockUntag(params as any);
+
+          case "remote_block_collapse":
+            return await handleBlockCollapse(params as any);
+
+          case "remote_blocks_errors":
+            return await handleBlocksErrors(params as any);
+
+          // Pane tools
+          case "remote_pane_split":
+            return await handlePaneSplit(params as any);
+
+          case "remote_pane_focus":
+            return await handlePaneFocus(params as any);
+
+          case "remote_pane_close":
+            return await handlePaneClose(params as any);
+
+          case "remote_pane_list":
+            return await handlePaneList(params as any);
+
+          case "remote_pane_exec":
+            return await handlePaneExec(params as any);
+
+          case "remote_pane_broadcast":
+            return await handlePaneBroadcast(params as any);
+
+          case "remote_pane_rename":
+            return await handlePaneRename(params as any);
+
+          case "remote_pane_next":
+            return await handlePaneNext(params as any);
+
+          // Share tools
+          case "remote_session_share":
+            return await handleSessionShare(params as any);
+
+          case "remote_session_unshare":
+            return await handleSessionUnshare(params as any);
+
+          case "remote_shares_list":
+            return await handleSharesList(params as any);
+
+          case "remote_share_update":
+            return await handleShareUpdate(params as any);
+
+          case "remote_share_server_start":
+            return await handleShareServerStart(params as any);
+
+          case "remote_share_server_stop":
+            return await handleShareServerStop(params as any);
 
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -321,7 +418,7 @@ Use \`shell\` tool to run commands. Type \`//end\` to end session.`,
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error(`Remote Shell MCP server v${VERSION} running on stdio`);
-    console.error("Features: file-transfer, port-forwarding, smart-wait, directory-tracking, streaming, auto-reconnect");
+    console.error("Features: blocks, panes, sharing, file-transfer, port-forwarding, smart-wait, auto-reconnect");
   }
 }
 

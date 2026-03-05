@@ -1,6 +1,8 @@
 import { isCdCommand, extractCdTarget } from "../utils/patterns.js";
 import { stripAnsi } from "../utils/ansi.js";
 import path from "path";
+import { shareManager } from "./sharing/share-manager.js";
+import { shareServer } from "./sharing/ws-server.js";
 export class DirectoryTracker {
     directoryStack = new Map();
     /**
@@ -50,13 +52,26 @@ export class DirectoryTracker {
             }
             // Update session
             session.workingDirectory = stack[stack.length - 1];
+            // Broadcast directory change to share clients
+            this.broadcastDirectoryChange(sessionId, session.workingDirectory);
         }
         // Try to extract from output if we see a prompt with path
         // Common patterns: user@host:/path$, [user@host path]$, etc.
         const pathFromPrompt = this.extractPathFromPrompt(output);
-        if (pathFromPrompt) {
+        if (pathFromPrompt && pathFromPrompt !== stack[stack.length - 1]) {
             stack[stack.length - 1] = pathFromPrompt;
             session.workingDirectory = pathFromPrompt;
+            // Broadcast directory change to share clients
+            this.broadcastDirectoryChange(sessionId, pathFromPrompt);
+        }
+    }
+    /**
+     * Broadcast directory change to share clients
+     */
+    broadcastDirectoryChange(sessionId, directory) {
+        const share = shareManager.getShareForSession(sessionId);
+        if (share) {
+            shareServer.broadcastDirectoryChange(share.shareId, directory);
         }
     }
     /**
@@ -70,8 +85,10 @@ export class DirectoryTracker {
             const trimmed = line.trim();
             if (trimmed.startsWith("/") || trimmed.startsWith("~")) {
                 const stack = this.directoryStack.get(sessionId);
-                if (stack) {
+                if (stack && stack[stack.length - 1] !== trimmed) {
                     stack[stack.length - 1] = trimmed;
+                    // Broadcast directory change to share clients
+                    this.broadcastDirectoryChange(sessionId, trimmed);
                 }
                 return;
             }
@@ -125,7 +142,15 @@ export class DirectoryTracker {
         for (const pattern of patterns) {
             const match = cleanOutput.match(pattern);
             if (match && match[1]) {
-                return match[1].trim();
+                const path = match[1].trim();
+                // Reject invalid paths:
+                // - Paths starting with // (URLs like //www.w3.org)
+                // - Paths containing quotes
+                // - Paths containing HTML-like content
+                if (path.startsWith("//") || path.includes('"') || path.includes("<") || path.includes(">")) {
+                    continue;
+                }
+                return path;
             }
         }
         return null;

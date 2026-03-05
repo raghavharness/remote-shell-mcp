@@ -6,12 +6,12 @@ import { CallToolRequestSchema, ListToolsRequestSchema, ListPromptsRequestSchema
 import { sessionManager } from "./session-manager.js";
 import { extractSessionName } from "./utils/patterns.js";
 // Tools
-import { handleShellTool, getShellToolDefinition, handleSessionStatus, handleSessionSwitch, handleSessionEnd, handleSessionHistory, handleSessionOutput, handleSessionSignal, handleOutputSearch, handleFindErrors, getSessionToolDefinitions, handleFileUpload, handleFileDownload, handleListRemote, getFileToolDefinitions, handleStartLocalForward, handleStartRemoteForward, handleListPortForwards, handleStopPortForward, handleStopAllPortForwards, getPortToolDefinitions, } from "./tools/index.js";
+import { handleShellTool, getShellToolDefinition, handleSessionStatus, handleSessionSwitch, handleSessionEnd, handleSessionHistory, handleSessionOutput, handleSessionSignal, handleOutputSearch, handleFindErrors, getSessionToolDefinitions, handleFileUpload, handleFileDownload, handleListRemote, getFileToolDefinitions, handleStartLocalForward, handleStartRemoteForward, handleListPortForwards, handleStopPortForward, handleStopAllPortForwards, getPortToolDefinitions, handleBlocksList, handleBlockGet, handleBlocksSearch, handleBlockCopy, handleBlockTag, handleBlockUntag, handleBlockCollapse, handleBlocksErrors, getBlockToolDefinitions, handlePaneSplit, handlePaneFocus, handlePaneClose, handlePaneList, handlePaneExec, handlePaneBroadcast, handlePaneRename, handlePaneNext, getPaneToolDefinitions, handleSessionShare, handleSessionUnshare, handleSharesList, handleShareUpdate, handleShareServerStart, handleShareServerStop, getShareToolDefinitions, } from "./tools/index.js";
 // Prompts
 import { getPromptDefinitions, handlePrompt } from "./prompts/index.js";
 // Features
 import { directoryTracker } from "./features/directory-tracker.js";
-const VERSION = "3.0.0";
+const VERSION = "4.0.0";
 class RemoteShellServer {
     server;
     constructor() {
@@ -35,6 +35,9 @@ class RemoteShellServer {
                 ...getSessionToolDefinitions(),
                 ...getFileToolDefinitions(),
                 ...getPortToolDefinitions(),
+                ...getBlockToolDefinitions(),
+                ...getPaneToolDefinitions(),
+                ...getShareToolDefinitions(),
             ],
         }));
         // Handle tool calls
@@ -83,6 +86,53 @@ class RemoteShellServer {
                         return await handleStopPortForward(params);
                     case "remote_port_stop_all":
                         return await handleStopAllPortForwards(params);
+                    // Block tools
+                    case "remote_blocks_list":
+                        return await handleBlocksList(params);
+                    case "remote_block_get":
+                        return await handleBlockGet(params);
+                    case "remote_blocks_search":
+                        return await handleBlocksSearch(params);
+                    case "remote_block_copy":
+                        return await handleBlockCopy(params);
+                    case "remote_block_tag":
+                        return await handleBlockTag(params);
+                    case "remote_block_untag":
+                        return await handleBlockUntag(params);
+                    case "remote_block_collapse":
+                        return await handleBlockCollapse(params);
+                    case "remote_blocks_errors":
+                        return await handleBlocksErrors(params);
+                    // Pane tools
+                    case "remote_pane_split":
+                        return await handlePaneSplit(params);
+                    case "remote_pane_focus":
+                        return await handlePaneFocus(params);
+                    case "remote_pane_close":
+                        return await handlePaneClose(params);
+                    case "remote_pane_list":
+                        return await handlePaneList(params);
+                    case "remote_pane_exec":
+                        return await handlePaneExec(params);
+                    case "remote_pane_broadcast":
+                        return await handlePaneBroadcast(params);
+                    case "remote_pane_rename":
+                        return await handlePaneRename(params);
+                    case "remote_pane_next":
+                        return await handlePaneNext(params);
+                    // Share tools
+                    case "remote_session_share":
+                        return await handleSessionShare(params);
+                    case "remote_session_unshare":
+                        return await handleSessionUnshare(params);
+                    case "remote_shares_list":
+                        return await handleSharesList(params);
+                    case "remote_share_update":
+                        return await handleShareUpdate(params);
+                    case "remote_share_server_start":
+                        return await handleShareServerStart(params);
+                    case "remote_share_server_stop":
+                        return await handleShareServerStop(params);
                     default:
                         throw new Error(`Unknown tool: ${name}`);
                 }
@@ -216,7 +266,7 @@ Use \`shell\` tool to run commands. Type \`//end\` to end session.`,
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
         console.error(`Remote Shell MCP server v${VERSION} running on stdio`);
-        console.error("Features: file-transfer, port-forwarding, smart-wait, directory-tracking, streaming, auto-reconnect");
+        console.error("Features: blocks, panes, sharing, file-transfer, port-forwarding, smart-wait, auto-reconnect");
     }
 }
 const server = new RemoteShellServer();

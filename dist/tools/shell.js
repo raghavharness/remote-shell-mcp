@@ -3,6 +3,7 @@ import { isSessionExitCommand, isSessionInterruptCommand, isRemoteShellCommand, 
 import { COLORS, formatOutputStart, formatOutputEnd } from "../utils/ansi.js";
 import { smartWait } from "../features/smart-wait.js";
 import { directoryTracker } from "../features/directory-tracker.js";
+import { blockManager } from "../features/blocks.js";
 import { formatSessionHeader, formatErrorBlock, formatUptime, ICONS, } from "../utils/terminal-ui.js";
 import { analyzeError, errorHandler } from "../features/error-handler.js";
 /**
@@ -133,6 +134,10 @@ The remote session has been disconnected. ${session.autoReconnect ? "Attempting 
             ],
         };
     }
+    // Get current working directory for block
+    const pwd = directoryTracker.getCurrentDirectory(session.id);
+    // Create a block for this command execution
+    const block = blockManager.createBlock(session.id, command, pwd);
     // Get smart wait time
     const actualWaitTime = waitTime ?? smartWait.getWaitTime(command);
     const waitReason = smartWait.getWaitTimeReason(command);
@@ -143,31 +148,37 @@ The remote session has been disconnected. ${session.autoReconnect ? "Attempting 
     else {
         output = await sessionManager.execChildProcessCommand(session, command, actualWaitTime);
     }
-    // Get current working directory
-    const pwd = directoryTracker.getCurrentDirectory(session.id);
-    const uptime = formatUptime(session.startedAt);
-    // Build the beautiful terminal UI
-    const header = formatSessionHeader(session.name, pwd, session.connected, command, uptime);
     // Check for errors in output (check exit code via echo $?)
     // For child process sessions, we need to analyze the output for error patterns
     const errorAnalysis = errorHandler.analyzeWithSession(session.id, command, output, undefined // Exit code not directly available for child process sessions
     );
+    // Complete the block with output
+    blockManager.completeBlock(block.id, output, errorAnalysis.exitCode, errorAnalysis.isError);
+    // Update working directory (may have changed)
+    const updatedPwd = directoryTracker.getCurrentDirectory(session.id);
+    const uptime = formatUptime(session.startedAt);
+    // Build the beautiful terminal UI
+    const header = formatSessionHeader(session.name, updatedPwd, session.connected, command, uptime);
     // Add wait time info if it was smart-adjusted
     const waitInfo = waitReason && actualWaitTime > 2000
         ? `\n${COLORS.dim}${COLORS.gray}(waited ${actualWaitTime / 1000}s for: ${waitReason})${COLORS.reset}`
         : "";
+    // Block ID reference
+    const blockRef = `${COLORS.dim}${COLORS.gray}[${block.id}]${COLORS.reset}`;
     // Build output with error handling if needed
     let resultText;
     if (errorAnalysis.isError && errorAnalysis.context.errorType) {
         // Show error with context for AI to analyze
         resultText = `${header}
 ${output}
-${formatErrorBlock(command, errorAnalysis.exitCode, errorAnalysis.stderr || "", errorAnalysis.context)}${waitInfo}`;
+${formatErrorBlock(command, errorAnalysis.exitCode, errorAnalysis.stderr || "", errorAnalysis.context)}${waitInfo}
+${blockRef}`;
     }
     else {
         // Normal output
         resultText = `${header}
-${output}${waitInfo}`;
+${output}${waitInfo}
+${blockRef}`;
     }
     return {
         content: [

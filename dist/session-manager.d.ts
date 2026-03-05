@@ -55,7 +55,9 @@ export declare class SessionManager {
      */
     execChildProcessCommand(session: ShellSession, command: string, waitTime?: number): Promise<string>;
     /**
-     * Send interrupt signal to session
+     * Send interrupt signal to session (Ctrl+C)
+     * Only writes \x03 to stdin - does NOT send SIGINT to child process
+     * as that would kill the SSH connection instead of the remote command
      */
     sendInterrupt(session: ShellSession): Promise<string>;
     /**
@@ -71,9 +73,17 @@ export declare class SessionManager {
      */
     endAllSessions(): Promise<number>;
     /**
+     * Set TERM environment variable on the remote shell
+     */
+    private setRemoteTerm;
+    /**
      * Update working directory by running pwd
      */
     private updateWorkingDirectory;
+    /**
+     * Update current user by running whoami
+     */
+    private updateCurrentUser;
     /**
      * Cleanup stale sessions
      */

@@ -14,6 +14,10 @@ export declare class DirectoryTracker {
      */
     updateFromCommand(session: ShellSession, command: string, output: string): void;
     /**
+     * Broadcast directory change to share clients
+     */
+    private broadcastDirectoryChange;
+    /**
      * Force update from pwd command output
      */
     updateFromPwd(sessionId: string, pwdOutput: string): void;
