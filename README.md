@@ -2,13 +2,26 @@
 
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-2.3.0-green.svg)](https://github.com/your-repo/mcp-remote-shell)
+[![Version](https://img.shields.io/badge/version-3.0.0-green.svg)](https://github.com/raghavharness/remote-shell-mcp)
 
 **Persistent SSH sessions for AI assistants.** Give Claude, GPT, or any MCP-compatible AI the ability to maintain long-running remote shell connections—just like [Warp](https://warp.dev) does for developers.
 
+## What's New in v3.0
+
+| Feature | Description |
+|---------|-------------|
+| **File Transfer** | Upload/download files via SFTP or base64 encoding |
+| **Port Forwarding** | Local and remote port forwards (SSH -L/-R style) |
+| **Smart Wait Time** | Auto-adjusts command timeout based on command type |
+| **Working Directory Tracking** | Shows current directory in prompts |
+| **Auto-Reconnect** | Automatically attempts to reconnect on disconnection |
+| **Output Search** | Search through command history and output |
+| **Streaming Output** | Real-time output for long-running commands |
+| **Modular Architecture** | Clean separation of concerns for maintainability |
+
 ## The Problem
 
-AI assistants are great at generating shell commands, but they can't maintain **persistent connections** to remote servers. Every command runs in isolation:
+AI assistants can't maintain **persistent connections** to remote servers. Every command runs in isolation:
 
 ```
 AI: Let me SSH into your server and check the logs.
@@ -18,46 +31,48 @@ AI: [runs: ssh user@server "df -h"]  # Opens ANOTHER connection, runs, closes
 ```
 
 This means:
-- **No session state** — environment variables, working directory, and context are lost between commands
+- **No session state** — environment variables, working directory, and context are lost
 - **Repeated authentication** — every command requires a new SSH handshake
-- **No interactivity** — can't use tools that require persistent shells (vim, less, htop)
+- **No file transfers** — can't easily upload configs or download logs
 - **Broken workflows** — can't `cd` to a directory and then run commands there
 
 ## The Solution
 
-Remote Shell MCP provides **Warp-like persistent shell sessions** for AI assistants. Once connected, the session stays open and commands run in context:
+Remote Shell MCP provides **Warp-like persistent shell sessions** for AI assistants:
 
 ```
 AI: [starts session → ssh user@server]
 AI: [runs: cd /var/log]           # Working directory persists
 AI: [runs: tail -f app.log]       # Can run interactive commands
-AI: [runs: Ctrl+C]                # Can send signals
-AI: [runs: df -h]                 # Still in /var/log, still connected
+AI: [sends: Ctrl+C]               # Can send signals
+AI: [downloads: error.log]        # Can transfer files
+AI: [forwards: 5432 → postgres]   # Can forward ports
 AI: [ends session]                # Explicit close when done
 ```
 
-## Why MCP?
-
-**[Model Context Protocol (MCP)](https://modelcontextprotocol.io)** is an open standard that enables AI assistants to interact with external tools and data sources in a secure, standardized way.
-
-Using MCP for remote shell access provides:
-
-- **Standardization** — Works with any MCP-compatible AI (Claude, GPT, local LLMs)
-- **Security** — Sessions run in a controlled subprocess, not the AI's sandbox
-- **Observability** — All commands and outputs are logged and auditable
-- **Extensibility** — Easy to add new connection types (SSH, gcloud, AWS SSM, kubectl)
-
 ## Features
+
+### Core Features
 
 | Feature | Description |
 |---------|-------------|
-| **Auto-Detection** | Recognizes SSH commands (`ssh`, `gcloud compute ssh`, `aws ssm`, etc.) and starts sessions automatically |
+| **Auto-Detection** | Recognizes SSH commands and starts sessions automatically |
 | **Persistent Sessions** | Connections stay open until explicitly closed |
 | **Multi-Cloud Support** | GCP, AWS, Azure, plain SSH, kubectl, docker, vagrant |
 | **Multiple Sessions** | Run concurrent connections with easy switching |
-| **Signal Support** | Send Ctrl+C (SIGINT) to interrupt long-running commands |
-| **Raw Terminal Output** | Preserves ANSI colors and formatting |
-| **Auto-Cleanup** | Stale sessions are cleaned up after 1 hour of inactivity |
+| **Signal Support** | Send Ctrl+C (SIGINT), SIGTERM, SIGKILL |
+| **Auto-Cleanup** | Stale sessions cleaned up after 1 hour |
+
+### v3.0 Features
+
+| Feature | Description |
+|---------|-------------|
+| **File Transfer** | `remote_file_upload`, `remote_file_download`, `remote_file_list` |
+| **Port Forwarding** | `remote_port_forward_local`, `remote_port_forward_remote` |
+| **Smart Wait** | Auto-adjusts timeout: 500ms for `ls`, 30s for `npm install` |
+| **Directory Tracking** | Tracks `cd` commands, shows pwd in prompt |
+| **Auto-Reconnect** | Configurable reconnection with backoff |
+| **Output Search** | `remote_session_search`, `remote_session_errors` |
 
 ## Installation
 
@@ -81,9 +96,7 @@ npm install
 npm run build
 ```
 
-### Configure Your AI Client
-
-#### Claude Code
+### Configure Claude Code
 
 Add to `~/.claude/settings.json`:
 
@@ -98,46 +111,68 @@ Add to `~/.claude/settings.json`:
 }
 ```
 
-#### Claude Desktop
-
-Add to your Claude Desktop configuration:
-
-```json
-{
-  "mcpServers": {
-    "remote-shell": {
-      "command": "node",
-      "args": ["/path/to/mcp-remote-shell/dist/index.js"]
-    }
-  }
-}
-```
-
-Restart your AI client after configuration.
-
 ## Usage
 
 ### The `shell` Tool
 
-The primary interface. It auto-detects remote commands and manages sessions transparently:
+The primary interface. Auto-detects remote commands and manages sessions:
 
 ```bash
-# These commands auto-start a persistent session:
+# Start a session (auto-detected):
 shell(command="ssh user@hostname")
-shell(command="gcloud compute ssh my-vm --zone us-central1-a --project my-project")
-shell(command="aws ssm start-session --target i-1234567890")
-shell(command="kubectl exec -it my-pod -- bash")
+shell(command="gcloud compute ssh my-vm --zone us-central1-a")
 
-# Once connected, commands run in the session:
+# Run commands in session:
 shell(command="ls -la")
-shell(command="cd /var/log && tail -f app.log")
-shell(command="docker ps")
+shell(command="cd /var/log")
 
-# Interrupt a running command (Ctrl+C):
+# Smart wait auto-adjusts for slow commands:
+shell(command="npm install")  # Waits 20s automatically
+
+# Interrupt (Ctrl+C):
 shell(command="//stop")
 
 # End session:
 shell(command="//end")
+```
+
+### File Transfer
+
+```bash
+# Upload a local file to remote:
+remote_file_upload(localPath="./config.yml", remotePath="/etc/myapp/config.yml")
+
+# Download a remote file:
+remote_file_download(remotePath="/var/log/app.log", localPath="./app.log")
+
+# List remote directory:
+remote_file_list(path="/var/log")
+```
+
+### Port Forwarding
+
+```bash
+# Local forward: access remote PostgreSQL on localhost:5433
+remote_port_forward_local(localPort=5433, remoteHost="localhost", remotePort=5432)
+
+# Remote forward: expose local dev server to remote
+remote_port_forward_remote(remotePort=8080, localPort=3000)
+
+# List active forwards:
+remote_port_list()
+
+# Stop a forward:
+remote_port_stop(forwardId="fwd-1")
+```
+
+### Output Search
+
+```bash
+# Search command history:
+remote_session_search(query="error", includeOutput=true)
+
+# Find error messages:
+remote_session_errors()
 ```
 
 ### Supported Connection Types
@@ -150,103 +185,175 @@ shell(command="//end")
 | Azure | `az ssh vm` | `az ssh vm --name vm -g resource-group` |
 | Kubernetes | `kubectl exec -it` | `kubectl exec -it pod -- bash` |
 | Docker | `docker exec -it` | `docker exec -it container bash` |
-| Vagrant | `vagrant ssh` | `vagrant ssh` |
 
-### MCP Prompts (Recommended)
+### Control Sequences & MCP Prompts
 
-MCP prompts provide a cleaner way to control sessions. These can be invoked directly by the AI client:
+Every control sequence has a corresponding MCP prompt (and aliases):
+
+#### Exit Session
+
+| Sequence | MCP Prompt | Aliases |
+|----------|------------|---------|
+| `~.` | `end-session` | `end`, `exit`, `quit`, `close`, `disconnect` |
+| `//end` | `end-session` | |
+| `//exit` | `exit` | |
+| `//quit` | `quit` | |
+| `//close` | `close` | |
+| `//disconnect` | `disconnect` | |
+
+#### Interrupt Command
+
+| Sequence | MCP Prompt | Aliases |
+|----------|------------|---------|
+| `//stop` | `stop` | `kill`, `interrupt`, `ctrl-c` |
+| `//kill` | `kill` | |
+| `//interrupt` | `interrupt` | |
+| `//ctrl-c` | `ctrl-c` | |
+| `~c` | `stop` | |
+
+### All MCP Prompts (27)
 
 | Prompt | Description |
 |--------|-------------|
-| `end-session` | End the current session or all sessions |
-| `stop` | Send Ctrl+C (SIGINT) to interrupt the current command |
-| `session-status` | Show status of all active sessions |
-| `switch-session` | Switch to a different session |
-| `session-history` | View command history for a session |
+| `end-session` | End session (aliases: `end`, `exit`, `quit`, `close`, `disconnect`) |
+| `stop` | Send Ctrl+C (aliases: `kill`, `interrupt`, `ctrl-c`) |
+| `session-status` | Show all sessions |
+| `switch-session` | Switch to different session |
+| `session-history` | View command history |
+| `exit-nested` | Exit inner shell without killing session |
+| `new-session` | Start parallel session |
+| `pwd` | Show tracked working directory |
+| `reconnect` | Manual reconnection help |
+| `upload-file` | Upload file to remote |
+| `download-file` | Download file from remote |
+| `list-files` | List remote directory |
+| `port-forward` | Set up local port forward |
+| `list-ports` | List active port forwards |
+| `stop-port` | Stop a port forward |
+| `stop-all-ports` | Stop all port forwards |
+| `find-errors` | Find error messages in history |
+| `search-output` | Search command history |
 
-**Using prompts in Claude Code:**
-```
-User: Use the end-session prompt
-User: Use the stop prompt to interrupt the command
-User: Show me the session-status prompt
-```
-
-### Control Sequences (Alternative)
-
-These special sequences work inside the `shell` command without conflicting with remote commands:
-
-| Sequence | Action |
-|----------|--------|
-| `~.` | End session (SSH-style escape) |
-| `//end` | End session |
-| `//exit` | End session |
-| `//quit` | End session |
-| `//stop` | Send Ctrl+C (SIGINT) |
-| `//kill` | Send Ctrl+C (SIGINT) |
-| `//ctrl-c` | Send Ctrl+C (SIGINT) |
-
-### Additional Tools
-
-For advanced session management:
+### All Tools (18)
 
 | Tool | Purpose |
 |------|---------|
-| `remote_session_start` | Explicitly start a session with specific parameters |
-| `remote_session_status` | List all active sessions |
-| `remote_session_switch` | Switch between multiple sessions |
-| `remote_session_end` | End one or all sessions |
-| `remote_session_history` | View command history for a session |
+| `shell` | **Primary tool** - execute commands, auto-detect sessions |
+| `remote_session_start` | Start session with explicit parameters |
+| `remote_session_status` | List all sessions with details |
+| `remote_session_switch` | Switch between sessions |
+| `remote_session_end` | End session(s) |
+| `remote_session_history` | View command history |
 | `remote_session_output` | Get raw output buffer |
-| `remote_session_signal` | Send signals (SIGINT, SIGTERM, SIGKILL) |
+| `remote_session_signal` | Send signals |
+| `remote_session_search` | Search history/output |
+| `remote_session_errors` | Find error messages |
+| `remote_file_upload` | Upload file to remote |
+| `remote_file_download` | Download file from remote |
+| `remote_file_list` | List remote directory |
+| `remote_port_forward_local` | Start local port forward |
+| `remote_port_forward_remote` | Start remote port forward |
+| `remote_port_list` | List port forwards |
+| `remote_port_stop` | Stop port forward |
+| `remote_port_stop_all` | Stop all port forwards |
+
+## Smart Wait Time
+
+Commands automatically get appropriate timeouts:
+
+| Command Type | Wait Time | Example |
+|--------------|-----------|---------|
+| Quick info | 500ms | `ls`, `pwd`, `whoami` |
+| File read | 1s | `cat`, `head` |
+| Search | 3s | `grep`, `find` |
+| Default | 2s | Most commands |
+| Network | 10s | `curl`, `wget` |
+| Package install | 15-30s | `npm install`, `pip install` |
+| Build | 20-60s | `make`, `docker build` |
+
+Override with explicit `waitTime` parameter when needed.
 
 ## Example Workflow
 
-Here's a real-world debugging session:
-
 ```
-User: Connect to my production server and check why the app is slow
+User: Connect to prod and figure out why the app is slow
 
-Claude: [shell: gcloud compute ssh prod-server --zone us-central1-a --project myapp]
+Claude: [shell: gcloud compute ssh prod-server --project myapp]
         Session started: gcloud:prod-server
+        Working directory: /home/user
 
 Claude: [shell: top -bn1 | head -20]
-        CPU is at 95%! Let me check what's consuming it.
+        CPU at 95%! Checking what's using it...
 
 Claude: [shell: ps aux --sort=-%cpu | head -10]
-        The app process is using 92% CPU. Checking logs...
+        App process using 92% CPU.
 
-Claude: [shell: cd /var/log/myapp && tail -100 error.log]
-        Found it - there's a infinite loop in the payment processor.
+Claude: [shell: cd /var/log/myapp]
+        [prod-server] /var/log/myapp $
+
+Claude: [remote_session_search: query="error"]
+        Found 3 matches in history...
+
+Claude: [shell: tail -100 error.log]
+        Found infinite loop in payment processor!
+
+Claude: [remote_file_download: remotePath="error.log", localPath="./error.log"]
+        Downloaded 15KB
 
 Claude: [shell: sudo systemctl restart myapp]
         Service restarted.
 
 Claude: [shell: //end]
-        Session ended. The app should be recovering now.
+        Session ended. App should be recovering.
 ```
 
 ## Architecture
 
 ```
-┌─────────────────┐     ┌───────────────────┐     ┌─────────────────┐
-│   AI Client     │────▶│  Remote Shell MCP │────▶│  Remote Server  │
-│ (Claude Code)   │ MCP │     Server        │ PTY │  (SSH/gcloud)   │
-└─────────────────┘     └───────────────────┘     └─────────────────┘
-                               │
-                               ▼
-                        ┌─────────────────┐
-                        │ Session Manager │
-                        │  - PTY sessions │
-                        │  - SSH2 clients │
-                        │  - Output buffer│
-                        └─────────────────┘
+┌─────────────────┐     ┌───────────────────────────┐     ┌─────────────────┐
+│   AI Client     │────▶│    Remote Shell MCP       │────▶│  Remote Server  │
+│ (Claude Code)   │ MCP │         Server            │     │  (SSH/gcloud)   │
+└─────────────────┘     └───────────────────────────┘     └─────────────────┘
+                                    │
+                        ┌───────────┴───────────┐
+                        ▼                       ▼
+                ┌───────────────┐       ┌───────────────┐
+                │Session Manager│       │   Features    │
+                │ - Sessions    │       │ - FileTransfer│
+                │ - History     │       │ - PortForward │
+                │ - Output      │       │ - SmartWait   │
+                └───────────────┘       │ - DirTracker  │
+                                        │ - Reconnect   │
+                                        │ - Search      │
+                                        └───────────────┘
 ```
 
-### Connection Modes
+### Module Structure
 
-1. **PTY Mode** (default): Uses `node-pty` to spawn a pseudo-terminal. Works with any CLI tool (gcloud, aws, kubectl, etc.)
-
-2. **SSH2 Mode**: Direct SSH connections using the `ssh2` library. Better control for pure SSH connections.
+```
+src/
+├── index.ts              # MCP server entry point
+├── session-manager.ts    # Session lifecycle management
+├── types.ts              # TypeScript interfaces
+├── features/
+│   ├── file-transfer.ts  # SFTP/SCP operations
+│   ├── port-forward.ts   # Port forwarding
+│   ├── smart-wait.ts     # Command timeout logic
+│   ├── directory-tracker.ts
+│   ├── reconnect.ts
+│   ├── output-search.ts
+│   └── streaming.ts
+├── tools/
+│   ├── shell.ts          # Main shell tool
+│   ├── session-tools.ts  # Session management
+│   ├── file-tools.ts     # File transfer tools
+│   └── port-tools.ts     # Port forward tools
+├── prompts/
+│   └── index.ts          # MCP prompts
+└── utils/
+    ├── ansi.ts           # Terminal formatting
+    └── patterns.ts       # Command detection
+```
 
 ## Development
 
@@ -254,38 +361,40 @@ Claude: [shell: //end]
 # Install dependencies
 npm install
 
-# Build TypeScript
+# Build
 npm run build
 
-# Run in development mode
+# Watch mode
 npm run dev
+
+# Run integration tests (local only)
+npm test
+
+# Run with live SSH (requires TEST_SSH_HOST, TEST_SSH_USER)
+TEST_SSH_HOST=myserver TEST_SSH_USER=myuser npm test
 ```
 
 ## Troubleshooting
 
 ### Session won't start
 
-- Ensure the underlying CLI tool is installed and authenticated (`gcloud auth login`, `aws configure`, etc.)
-- Check that your SSH keys are properly configured
+- Ensure CLI tools are installed and authenticated (`gcloud auth login`, etc.)
+- Check SSH keys are configured
 
 ### Commands timeout
 
-- Increase `waitTime` for slow commands
+- Smart wait auto-adjusts, but override with `waitTime` parameter
 - Use `//stop` to interrupt stuck commands
 
-### Session disconnects unexpectedly
+### File transfer fails
 
-- Sessions auto-close after 1 hour of inactivity
-- Network issues may drop the connection—just start a new session
+- SSH2 sessions use SFTP (most reliable)
+- Child process sessions use base64 encoding
 
-## Contributing
+### Port forward not working
 
-Contributions are welcome! Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+- Ensure local port is available
+- Check remote service is running
 
 ## License
 
@@ -293,4 +402,4 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 
-**Keywords**: MCP, Model Context Protocol, SSH, remote shell, AI tools, Claude, persistent sessions, terminal, DevOps, cloud computing, GCP, AWS, Azure, kubectl, docker
+**Keywords**: MCP, Model Context Protocol, SSH, remote shell, AI tools, Claude, persistent sessions, terminal, DevOps, SFTP, port forwarding, cloud computing

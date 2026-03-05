@@ -1,7 +1,8 @@
 {
   "name": "mcp-remote-shell",
-  "version": "2.3.0",
-  "description": "MCP server for Warp-like remote shell capabilities in Claude Code",
+  "version": "3.0.0",
+  "description": "MCP server for Warp-like remote shell capabilities with file transfer, port forwarding, and smart features",
+  "type": "module",
   "main": "dist/index.js",
   "bin": {
     "mcp-remote-shell": "./dist/index.js"
@@ -9,16 +10,39 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "dev": "tsc --watch",
+    "test": "node --loader ts-node/esm src/tests/integration/session.test.ts",
+    "test:files": "node --loader ts-node/esm src/tests/integration/file-transfer.test.ts",
+    "test:ports": "node --loader ts-node/esm src/tests/integration/port-forward.test.ts",
+    "test:all": "npm run test && npm run test:files && npm run test:ports",
+    "clean": "rm -rf dist",
+    "prepublish": "npm run build"
   },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "ssh",
+    "remote-shell",
+    "ai-tools",
+    "claude",
+    "terminal",
+    "devops",
+    "sftp",
+    "port-forwarding"
+  ],
+  "author": "",
+  "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "ssh2": "^1.15.0",
-    "strip-ansi": "^6.0.1"
+    "ssh2": "^1.15.0"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/ssh2": "^1.15.0",
+    "ts-node": "^10.9.0",
     "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
