@@ -1,0 +1,24 @@
+{
+  "name": "mcp-remote-shell",
+  "version": "2.2.0",
+  "description": "MCP server for Warp-like remote shell capabilities in Claude Code",
+  "main": "dist/index.js",
+  "bin": {
+    "mcp-remote-shell": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ssh2": "^1.15.0",
+    "strip-ansi": "^6.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/ssh2": "^1.15.0",
+    "typescript": "^5.0.0"
+  }
+}
