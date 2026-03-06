@@ -61,6 +61,26 @@ import {
   handleShareServerStart,
   handleShareServerStop,
   getShareToolDefinitions,
+  // Swarm tools (v5.0)
+  handleSwarmCreate,
+  handleSwarmList,
+  handleSwarmStatus,
+  handleSwarmExec,
+  handleSwarmInput,
+  handleSwarmInterrupt,
+  handleSwarmEnd,
+  handleSwarmAddTarget,
+  handleSwarmRemoveTarget,
+  getSwarmToolDefinitions,
+  // Input/Streaming tools (v5.0)
+  handleSessionInput,
+  handleCheckPrompt,
+  handleConfirm,
+  handleSendPassword,
+  handleEnableStreaming,
+  handleDisableStreaming,
+  handleStreamingStatus,
+  getInputToolDefinitions,
 } from "./tools/index.js";
 
 // Prompts
@@ -69,7 +89,7 @@ import { getPromptDefinitions, handlePrompt } from "./prompts/index.js";
 // Features
 import { directoryTracker } from "./features/directory-tracker.js";
 
-const VERSION = "4.0.0";
+const VERSION = "5.0.0";
 
 class RemoteShellServer {
   private server: Server;
@@ -103,6 +123,8 @@ class RemoteShellServer {
         ...getBlockToolDefinitions(),
         ...getPaneToolDefinitions(),
         ...getShareToolDefinitions(),
+        ...getSwarmToolDefinitions(),
+        ...getInputToolDefinitions(),
       ],
     }));
 
@@ -239,6 +261,56 @@ class RemoteShellServer {
 
           case "remote_share_server_stop":
             return await handleShareServerStop(params as any);
+
+          // Swarm tools (v5.0)
+          case "remote_swarm_create":
+            return await handleSwarmCreate(params as any);
+
+          case "remote_swarm_list":
+            return await handleSwarmList();
+
+          case "remote_swarm_status":
+            return await handleSwarmStatus(params as any);
+
+          case "remote_swarm_exec":
+            return await handleSwarmExec(params as any);
+
+          case "remote_swarm_input":
+            return await handleSwarmInput(params as any);
+
+          case "remote_swarm_interrupt":
+            return await handleSwarmInterrupt(params as any);
+
+          case "remote_swarm_end":
+            return await handleSwarmEnd(params as any);
+
+          case "remote_swarm_add_target":
+            return await handleSwarmAddTarget(params as any);
+
+          case "remote_swarm_remove_target":
+            return await handleSwarmRemoveTarget(params as any);
+
+          // Input/Streaming tools (v5.0)
+          case "remote_session_input":
+            return await handleSessionInput(params as any);
+
+          case "remote_session_check_prompt":
+            return await handleCheckPrompt(params as any);
+
+          case "remote_session_confirm":
+            return await handleConfirm(params as any);
+
+          case "remote_session_password":
+            return await handleSendPassword(params as any);
+
+          case "remote_stream_enable":
+            return await handleEnableStreaming(params as any);
+
+          case "remote_stream_disable":
+            return await handleDisableStreaming(params as any);
+
+          case "remote_stream_status":
+            return await handleStreamingStatus(params as any);
 
           default:
             throw new Error(`Unknown tool: ${name}`);
@@ -418,7 +490,7 @@ Use \`shell\` tool to run commands. Type \`//end\` to end session.`,
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     console.error(`Remote Shell MCP server v${VERSION} running on stdio`);
-    console.error("Features: blocks, panes, sharing, file-transfer, port-forwarding, smart-wait, auto-reconnect");
+    console.error("Features: blocks, panes, sharing, file-transfer, port-forwarding, smart-wait, auto-reconnect, swarm, streaming, tty-input");
   }
 }
 

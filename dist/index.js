@@ -6,12 +6,16 @@ import { CallToolRequestSchema, ListToolsRequestSchema, ListPromptsRequestSchema
 import { sessionManager } from "./session-manager.js";
 import { extractSessionName } from "./utils/patterns.js";
 // Tools
-import { handleShellTool, getShellToolDefinition, handleSessionStatus, handleSessionSwitch, handleSessionEnd, handleSessionHistory, handleSessionOutput, handleSessionSignal, handleOutputSearch, handleFindErrors, getSessionToolDefinitions, handleFileUpload, handleFileDownload, handleListRemote, getFileToolDefinitions, handleStartLocalForward, handleStartRemoteForward, handleListPortForwards, handleStopPortForward, handleStopAllPortForwards, getPortToolDefinitions, handleBlocksList, handleBlockGet, handleBlocksSearch, handleBlockCopy, handleBlockTag, handleBlockUntag, handleBlockCollapse, handleBlocksErrors, getBlockToolDefinitions, handlePaneSplit, handlePaneFocus, handlePaneClose, handlePaneList, handlePaneExec, handlePaneBroadcast, handlePaneRename, handlePaneNext, getPaneToolDefinitions, handleSessionShare, handleSessionUnshare, handleSharesList, handleShareUpdate, handleShareServerStart, handleShareServerStop, getShareToolDefinitions, } from "./tools/index.js";
+import { handleShellTool, getShellToolDefinition, handleSessionStatus, handleSessionSwitch, handleSessionEnd, handleSessionHistory, handleSessionOutput, handleSessionSignal, handleOutputSearch, handleFindErrors, getSessionToolDefinitions, handleFileUpload, handleFileDownload, handleListRemote, getFileToolDefinitions, handleStartLocalForward, handleStartRemoteForward, handleListPortForwards, handleStopPortForward, handleStopAllPortForwards, getPortToolDefinitions, handleBlocksList, handleBlockGet, handleBlocksSearch, handleBlockCopy, handleBlockTag, handleBlockUntag, handleBlockCollapse, handleBlocksErrors, getBlockToolDefinitions, handlePaneSplit, handlePaneFocus, handlePaneClose, handlePaneList, handlePaneExec, handlePaneBroadcast, handlePaneRename, handlePaneNext, getPaneToolDefinitions, handleSessionShare, handleSessionUnshare, handleSharesList, handleShareUpdate, handleShareServerStart, handleShareServerStop, getShareToolDefinitions, 
+// Swarm tools (v5.0)
+handleSwarmCreate, handleSwarmList, handleSwarmStatus, handleSwarmExec, handleSwarmInput, handleSwarmInterrupt, handleSwarmEnd, handleSwarmAddTarget, handleSwarmRemoveTarget, getSwarmToolDefinitions, 
+// Input/Streaming tools (v5.0)
+handleSessionInput, handleCheckPrompt, handleConfirm, handleSendPassword, handleEnableStreaming, handleDisableStreaming, handleStreamingStatus, getInputToolDefinitions, } from "./tools/index.js";
 // Prompts
 import { getPromptDefinitions, handlePrompt } from "./prompts/index.js";
 // Features
 import { directoryTracker } from "./features/directory-tracker.js";
-const VERSION = "4.0.0";
+const VERSION = "5.0.0";
 class RemoteShellServer {
     server;
     constructor() {
@@ -38,6 +42,8 @@ class RemoteShellServer {
                 ...getBlockToolDefinitions(),
                 ...getPaneToolDefinitions(),
                 ...getShareToolDefinitions(),
+                ...getSwarmToolDefinitions(),
+                ...getInputToolDefinitions(),
             ],
         }));
         // Handle tool calls
@@ -133,6 +139,40 @@ class RemoteShellServer {
                         return await handleShareServerStart(params);
                     case "remote_share_server_stop":
                         return await handleShareServerStop(params);
+                    // Swarm tools (v5.0)
+                    case "remote_swarm_create":
+                        return await handleSwarmCreate(params);
+                    case "remote_swarm_list":
+                        return await handleSwarmList();
+                    case "remote_swarm_status":
+                        return await handleSwarmStatus(params);
+                    case "remote_swarm_exec":
+                        return await handleSwarmExec(params);
+                    case "remote_swarm_input":
+                        return await handleSwarmInput(params);
+                    case "remote_swarm_interrupt":
+                        return await handleSwarmInterrupt(params);
+                    case "remote_swarm_end":
+                        return await handleSwarmEnd(params);
+                    case "remote_swarm_add_target":
+                        return await handleSwarmAddTarget(params);
+                    case "remote_swarm_remove_target":
+                        return await handleSwarmRemoveTarget(params);
+                    // Input/Streaming tools (v5.0)
+                    case "remote_session_input":
+                        return await handleSessionInput(params);
+                    case "remote_session_check_prompt":
+                        return await handleCheckPrompt(params);
+                    case "remote_session_confirm":
+                        return await handleConfirm(params);
+                    case "remote_session_password":
+                        return await handleSendPassword(params);
+                    case "remote_stream_enable":
+                        return await handleEnableStreaming(params);
+                    case "remote_stream_disable":
+                        return await handleDisableStreaming(params);
+                    case "remote_stream_status":
+                        return await handleStreamingStatus(params);
                     default:
                         throw new Error(`Unknown tool: ${name}`);
                 }
@@ -266,7 +306,7 @@ Use \`shell\` tool to run commands. Type \`//end\` to end session.`,
         const transport = new StdioServerTransport();
         await this.server.connect(transport);
         console.error(`Remote Shell MCP server v${VERSION} running on stdio`);
-        console.error("Features: blocks, panes, sharing, file-transfer, port-forwarding, smart-wait, auto-reconnect");
+        console.error("Features: blocks, panes, sharing, file-transfer, port-forwarding, smart-wait, auto-reconnect, swarm, streaming, tty-input");
     }
 }
 const server = new RemoteShellServer();

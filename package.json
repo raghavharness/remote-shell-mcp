@@ -1,6 +1,6 @@
 {
   "name": "mcp-remote-shell",
-  "version": "4.0.0",
+  "version": "5.0.0",
   "description": "MCP server for Warp-like remote shell capabilities with file transfer, port forwarding, and smart features",
   "type": "module",
   "main": "dist/index.js",

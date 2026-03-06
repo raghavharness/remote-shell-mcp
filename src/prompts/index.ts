@@ -4,6 +4,8 @@ import { portForwarder } from "../features/port-forward.js";
 import { blockManager } from "../features/blocks.js";
 import { paneManager } from "../features/panes.js";
 import { shareManager } from "../features/sharing/share-manager.js";
+import { swarmManager } from "../features/swarm.js";
+import { realtimeStream } from "../features/realtime-stream.js";
 
 interface PromptMessage {
   role: "user" | "assistant";
@@ -379,6 +381,110 @@ export function getPromptDefinitions() {
     {
       name: "shares",
       description: "List all active session shares",
+    },
+
+    // === SWARM (v5.0) ===
+    {
+      name: "swarm-create",
+      description: "Create a swarm of parallel SSH sessions to multiple machines",
+      arguments: [
+        {
+          name: "name",
+          description: "Friendly name for the swarm",
+          required: true,
+        },
+        {
+          name: "method",
+          description: "Connection method: ssh, gcloud, aws, azure, custom",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "swarm-list",
+      description: "List all active swarms",
+    },
+    {
+      name: "swarm-exec",
+      description: "Broadcast a command to all sessions in a swarm",
+      arguments: [
+        {
+          name: "swarmId",
+          description: "Swarm ID",
+          required: true,
+        },
+        {
+          name: "command",
+          description: "Command to execute on all targets",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "swarm-end",
+      description: "End a swarm and close all its sessions",
+      arguments: [
+        {
+          name: "swarmId",
+          description: "Swarm ID to end (or 'all')",
+          required: false,
+        },
+      ],
+    },
+
+    // === INPUT/STREAMING (v5.0) ===
+    {
+      name: "input",
+      description: "Send input to a session (respond to prompts, passwords, confirmations)",
+      arguments: [
+        {
+          name: "text",
+          description: "Input text to send",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "password",
+      description: "Send a password to a session (input is hidden)",
+      arguments: [
+        {
+          name: "password",
+          description: "Password to send",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "confirm",
+      description: "Send a yes/no confirmation to a session",
+      arguments: [
+        {
+          name: "yes",
+          description: "true for yes, false for no",
+          required: true,
+        },
+      ],
+    },
+    {
+      name: "check-prompt",
+      description: "Check if a session is waiting for user input",
+    },
+    {
+      name: "stream",
+      description: "Enable/disable real-time streaming with error detection",
+      arguments: [
+        {
+          name: "enable",
+          description: "true to enable, false to disable",
+          required: true,
+        },
+        {
+          name: "autoInterrupt",
+          description: "Auto-send Ctrl+C on error detection",
+          required: false,
+        },
+      ],
     },
   ];
 }
@@ -1540,6 +1646,418 @@ Use the remote_session_unshare tool.`,
 ${shareList}
 
 Use remote_shares_list for more details.`,
+            },
+          },
+        ],
+      };
+    }
+
+    // === SWARM (v5.0) ===
+    case "swarm-create": {
+      const name = args?.name;
+      const method = args?.method;
+
+      if (!name || !method) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Create a swarm of parallel SSH sessions.
+
+Required arguments:
+- name: Friendly name for the swarm
+- method: ssh, gcloud, aws, azure, or custom
+
+Use remote_swarm_create with targets array. Example:
+\`\`\`json
+{
+  "name": "web-servers",
+  "method": "ssh",
+  "targets": [
+    { "id": "web1", "host": "10.0.0.1", "username": "admin" },
+    { "id": "web2", "host": "10.0.0.2", "username": "admin" }
+  ]
+}
+\`\`\``,
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Create swarm "${name}" with method "${method}".
+
+Use remote_swarm_create with:
+- name: "${name}"
+- method: "${method}"
+- targets: [array of target objects]`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "swarm-list": {
+      const swarms = swarmManager.getAllSwarms();
+
+      if (swarms.length === 0) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "No active swarms. Use swarm-create to create a swarm of parallel sessions.",
+              },
+            },
+          ],
+        };
+      }
+
+      const swarmList = swarms.map(s => {
+        const status = swarmManager.getSwarmStatus(s.id);
+        return `- ${s.id}: ${s.name} (${status.connected}/${status.total} connected)`;
+      }).join("\n");
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Active swarms (${swarms.length}):
+
+${swarmList}
+
+Use remote_swarm_list for full details.`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "swarm-exec": {
+      const swarmId = args?.swarmId;
+      const command = args?.command;
+
+      if (!swarmId || !command) {
+        const swarms = swarmManager.getAllSwarms();
+        const swarmList = swarms.map(s => `- ${s.id}: ${s.name}`).join("\n") || "No active swarms.";
+
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Broadcast a command to all sessions in a swarm.
+
+Required: swarmId and command
+
+Available swarms:
+${swarmList}`,
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Broadcast command to swarm "${swarmId}": ${command}
+
+Use remote_swarm_exec with swarmId="${swarmId}" and command="${command}".`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "swarm-end": {
+      const swarmId = args?.swarmId;
+
+      if (!swarmId) {
+        const swarms = swarmManager.getAllSwarms();
+        if (swarms.length === 0) {
+          return {
+            messages: [
+              {
+                role: "user",
+                content: {
+                  type: "text",
+                  text: "No active swarms to end.",
+                },
+              },
+            ],
+          };
+        }
+
+        const swarmList = swarms.map(s => `- ${s.id}: ${s.name}`).join("\n");
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Specify a swarmId to end, or use "all" to end all swarms.
+
+Active swarms:
+${swarmList}`,
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `End swarm: ${swarmId}
+
+Use remote_swarm_end with swarmId="${swarmId}".`,
+            },
+          },
+        ],
+      };
+    }
+
+    // === INPUT/STREAMING (v5.0) ===
+    case "input": {
+      const text = args?.text;
+      const activeSession = sessionManager.getActiveSession();
+
+      if (!activeSession) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "No active session. Start a remote session first.",
+              },
+            },
+          ],
+        };
+      }
+
+      if (!text) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Send input to session "${activeSession.name}".
+
+Use remote_session_input with input="your text".`,
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Send input "${text}" to session "${activeSession.name}".
+
+Use remote_session_input with input="${text}".`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "password": {
+      const password = args?.password;
+      const activeSession = sessionManager.getActiveSession();
+
+      if (!activeSession) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "No active session. Start a remote session first.",
+              },
+            },
+          ],
+        };
+      }
+
+      if (!password) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Send a password to session "${activeSession.name}".
+
+Use remote_session_password with password="your password".
+The password will be hidden in output.`,
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Send password to session "${activeSession.name}".
+
+Use remote_session_password with password="********".`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "confirm": {
+      const yes = args?.yes;
+      const activeSession = sessionManager.getActiveSession();
+
+      if (!activeSession) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "No active session. Start a remote session first.",
+              },
+            },
+          ],
+        };
+      }
+
+      const confirmVal = yes === "true";
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `Send ${confirmVal ? "yes" : "no"} confirmation to session "${activeSession.name}".
+
+Use remote_session_confirm with confirm=${confirmVal}.`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "check-prompt": {
+      const activeSession = sessionManager.getActiveSession();
+
+      if (!activeSession) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "No active session.",
+              },
+            },
+          ],
+        };
+      }
+
+      const pendingPrompt = realtimeStream.getPendingPrompt(activeSession.id);
+
+      if (pendingPrompt) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: `Session "${activeSession.name}" is waiting for ${pendingPrompt.type} input.
+
+Prompt: ${pendingPrompt.prompt}
+
+Use remote_session_input to respond.`,
+              },
+            },
+          ],
+        };
+      }
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `No pending prompts in session "${activeSession.name}".
+
+Use remote_session_check_prompt for detailed analysis.`,
+            },
+          },
+        ],
+      };
+    }
+
+    case "stream": {
+      const enable = args?.enable;
+      const autoInterrupt = args?.autoInterrupt;
+      const activeSession = sessionManager.getActiveSession();
+
+      if (!activeSession) {
+        return {
+          messages: [
+            {
+              role: "user",
+              content: {
+                type: "text",
+                text: "No active session.",
+              },
+            },
+          ],
+        };
+      }
+
+      const isEnabled = enable === "true";
+      const tool = isEnabled ? "remote_stream_enable" : "remote_stream_disable";
+
+      return {
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: `${isEnabled ? "Enable" : "Disable"} real-time streaming for session "${activeSession.name}".
+
+Use ${tool}${autoInterrupt ? ` with autoInterrupt=${autoInterrupt}` : ""}.
+
+Streaming provides:
+- Real-time error detection
+- Prompt detection for input
+- Auto-interrupt on errors (optional)`,
             },
           },
         ],

@@ -173,4 +173,55 @@ export interface SharedSession {
     connectedClients: number;
     createdAt: Date;
 }
+export type SwarmConnectionMethod = "ssh" | "gcloud" | "aws" | "azure" | "custom";
+export interface SwarmTarget {
+    id: string;
+    host?: string;
+    username?: string;
+    instance?: string;
+    zone?: string;
+    project?: string;
+    region?: string;
+    targetId?: string;
+    vmName?: string;
+    resourceGroup?: string;
+    command?: string;
+}
+export interface Swarm {
+    id: string;
+    name: string;
+    method: SwarmConnectionMethod;
+    targets: SwarmTarget[];
+    sessionIds: string[];
+    createdAt: Date;
+    status: "creating" | "active" | "partial" | "failed";
+    failedTargets: string[];
+}
+export interface SwarmExecResult {
+    targetId: string;
+    sessionId: string;
+    output: string;
+    isError: boolean;
+    exitCode?: number;
+}
+export interface StreamingConfig {
+    enabled: boolean;
+    errorPatterns: RegExp[];
+    autoInterrupt: boolean;
+    bufferFlushInterval: number;
+    maxBufferSize: number;
+}
+export interface StreamEvent {
+    type: "output" | "error" | "prompt" | "complete" | "interrupted";
+    sessionId: string;
+    data: string;
+    timestamp: Date;
+    matchedPattern?: string;
+}
+export interface PendingInput {
+    sessionId: string;
+    prompt: string;
+    detectedAt: Date;
+    inputType: "password" | "confirmation" | "text" | "unknown";
+}
 //# sourceMappingURL=types.d.ts.map

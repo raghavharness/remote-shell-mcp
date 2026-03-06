@@ -56,3 +56,25 @@ export {
   handleShareServerStop,
   getShareToolDefinitions,
 } from "./share-tools.js";
+export {
+  handleSwarmCreate,
+  handleSwarmList,
+  handleSwarmStatus,
+  handleSwarmExec,
+  handleSwarmInput,
+  handleSwarmInterrupt,
+  handleSwarmEnd,
+  handleSwarmAddTarget,
+  handleSwarmRemoveTarget,
+  getSwarmToolDefinitions,
+} from "./swarm-tools.js";
+export {
+  handleSessionInput,
+  handleCheckPrompt,
+  handleConfirm,
+  handleSendPassword,
+  handleEnableStreaming,
+  handleDisableStreaming,
+  handleStreamingStatus,
+  getInputToolDefinitions,
+} from "./input-tools.js";

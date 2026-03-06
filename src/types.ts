@@ -210,3 +210,73 @@ export interface SharedSession {
   connectedClients: number;
   createdAt: Date;
 }
+
+// ============================================================================
+// Swarm Management (Multi-machine parallel sessions)
+// ============================================================================
+
+export type SwarmConnectionMethod = "ssh" | "gcloud" | "aws" | "azure" | "custom";
+
+export interface SwarmTarget {
+  id: string;                      // Unique target identifier
+  host?: string;                   // For SSH: hostname/IP
+  username?: string;               // For SSH: username
+  instance?: string;               // For cloud: instance name
+  zone?: string;                   // For GCP
+  project?: string;                // For GCP
+  region?: string;                 // For AWS
+  targetId?: string;               // For AWS SSM
+  vmName?: string;                 // For Azure
+  resourceGroup?: string;          // For Azure
+  command?: string;                // For custom
+}
+
+export interface Swarm {
+  id: string;                      // "swarm-1"
+  name: string;                    // User-friendly name
+  method: SwarmConnectionMethod;
+  targets: SwarmTarget[];
+  sessionIds: string[];            // Associated session IDs
+  createdAt: Date;
+  status: "creating" | "active" | "partial" | "failed";
+  failedTargets: string[];         // Target IDs that failed to connect
+}
+
+export interface SwarmExecResult {
+  targetId: string;
+  sessionId: string;
+  output: string;
+  isError: boolean;
+  exitCode?: number;
+}
+
+// ============================================================================
+// Real-time Streaming
+// ============================================================================
+
+export interface StreamingConfig {
+  enabled: boolean;
+  errorPatterns: RegExp[];         // Patterns to detect errors
+  autoInterrupt: boolean;          // Auto-send Ctrl+C on error
+  bufferFlushInterval: number;     // Ms between output flushes
+  maxBufferSize: number;           // Max chars before forced flush
+}
+
+export interface StreamEvent {
+  type: "output" | "error" | "prompt" | "complete" | "interrupted";
+  sessionId: string;
+  data: string;
+  timestamp: Date;
+  matchedPattern?: string;         // If error pattern matched
+}
+
+// ============================================================================
+// TTY Input Support
+// ============================================================================
+
+export interface PendingInput {
+  sessionId: string;
+  prompt: string;                  // The detected prompt text
+  detectedAt: Date;
+  inputType: "password" | "confirmation" | "text" | "unknown";
+}

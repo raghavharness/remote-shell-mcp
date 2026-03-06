@@ -2,9 +2,19 @@
 
 [![MCP Compatible](https://img.shields.io/badge/MCP-Compatible-blue)](https://modelcontextprotocol.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-4.0.0-green.svg)](https://github.com/raghavharness/remote-shell-mcp)
+[![Version](https://img.shields.io/badge/version-5.0.0-green.svg)](https://github.com/raghavharness/remote-shell-mcp)
 
 **Persistent SSH sessions for AI assistants.** Give Claude, GPT, or any MCP-compatible AI the ability to maintain long-running remote shell connections—just like [Warp](https://warp.dev) does for developers.
+
+## What's New in v5.0
+
+| Feature | Description |
+|---------|-------------|
+| **TTY Input** | Respond to interactive prompts (passwords, confirmations) directly |
+| **Swarm Mode** | Launch parallel SSH sessions to multiple machines simultaneously |
+| **Broadcast Commands** | Execute the same command across all machines in a swarm |
+| **Real-time Streaming** | Monitor output in real-time with error pattern detection |
+| **Auto-Interrupt** | Automatically send Ctrl+C when errors are detected |
 
 ## What's New in v4.0
 
@@ -193,6 +203,98 @@ remote_pane_broadcast(command="uptime")
 remote_pane_close(paneId="pane-1")
 ```
 
+### TTY Input (NEW in v5.0)
+
+Respond to interactive prompts directly:
+
+```bash
+# Check if session is waiting for input
+remote_session_check_prompt()
+
+# Send text input
+remote_session_input(input="my-response")
+
+# Send password (hidden in output)
+remote_session_password(password="secret123")
+
+# Send Y/N confirmation
+remote_session_confirm(confirm=true)
+```
+
+### Swarm Mode (NEW in v5.0)
+
+Launch parallel SSH sessions to multiple machines:
+
+```bash
+# Create a swarm of SSH connections
+remote_swarm_create(
+  name="web-servers",
+  method="ssh",
+  targets=[
+    { "id": "web1", "host": "10.0.0.1", "username": "admin" },
+    { "id": "web2", "host": "10.0.0.2", "username": "admin" },
+    { "id": "web3", "host": "10.0.0.3", "username": "admin" }
+  ]
+)
+
+# Create a GCloud swarm
+remote_swarm_create(
+  name="gcp-cluster",
+  method="gcloud",
+  targets=[
+    { "id": "node1", "instance": "gke-node-1", "zone": "us-central1-a" },
+    { "id": "node2", "instance": "gke-node-2", "zone": "us-central1-a" }
+  ]
+)
+
+# Broadcast command to all targets
+remote_swarm_exec(swarmId="swarm-1", command="uptime")
+remote_swarm_exec(swarmId="swarm-1", command="df -h")
+
+# Send input to all sessions (e.g., for sudo password)
+remote_swarm_input(swarmId="swarm-1", input="mypassword")
+
+# Interrupt all sessions
+remote_swarm_interrupt(swarmId="swarm-1")
+
+# List swarms
+remote_swarm_list()
+
+# Get detailed swarm status
+remote_swarm_status(swarmId="swarm-1")
+
+# End a swarm
+remote_swarm_end(swarmId="swarm-1")
+remote_swarm_end(swarmId="all")  # End all swarms
+```
+
+### Real-time Streaming (NEW in v5.0)
+
+Enable real-time output streaming with error detection:
+
+```bash
+# Enable streaming with auto-interrupt on errors
+remote_stream_enable(autoInterrupt=true)
+
+# Add custom error patterns
+remote_stream_enable(
+  autoInterrupt=true,
+  errorPatterns=["CRITICAL", "OutOfMemory", "Segfault"]
+)
+
+# Check streaming status
+remote_stream_status()
+
+# Disable streaming
+remote_stream_disable()
+```
+
+When streaming is enabled:
+- Output is monitored in real-time
+- Error patterns are detected immediately
+- Interactive prompts are detected
+- Auto-interrupt sends Ctrl+C when errors are found
+
 ### Session Sharing (NEW in v4.0)
 
 Share sessions for real-time collaboration:
@@ -300,7 +402,7 @@ Every control sequence has a corresponding MCP prompt:
 | `unshare` | Stop sharing |
 | `shares` | List active shares |
 
-### All Tools (34)
+### All Tools (50)
 
 | Tool | Purpose |
 |------|---------|
@@ -350,6 +452,24 @@ Every control sequence has a corresponding MCP prompt:
 | `remote_share_update` | Update share settings |
 | `remote_share_server_start` | Start share server |
 | `remote_share_server_stop` | Stop share server |
+| **Swarm (v5.0)** | |
+| `remote_swarm_create` | Create parallel session swarm |
+| `remote_swarm_list` | List active swarms |
+| `remote_swarm_status` | Get swarm details |
+| `remote_swarm_exec` | Broadcast command to swarm |
+| `remote_swarm_input` | Send input to all swarm sessions |
+| `remote_swarm_interrupt` | Interrupt all swarm sessions |
+| `remote_swarm_end` | End swarm |
+| `remote_swarm_add_target` | Add target to swarm |
+| `remote_swarm_remove_target` | Remove target from swarm |
+| **Input/Streaming (v5.0)** | |
+| `remote_session_input` | Send input to session |
+| `remote_session_check_prompt` | Check for pending prompts |
+| `remote_session_confirm` | Send Y/N confirmation |
+| `remote_session_password` | Send password (hidden) |
+| `remote_stream_enable` | Enable real-time streaming |
+| `remote_stream_disable` | Disable streaming |
+| `remote_stream_status` | Get streaming status |
 
 ## Smart Wait Time
 
