@@ -991,6 +991,8 @@ export class ShareServer extends EventEmitter {
             }
             // Try to detect context changes from output (PS1 parsing)
             detectContextChange(msg.data);
+            // Check if output ends with a shell prompt (to avoid duplicate prompts)
+            lastOutputHadPrompt = detectPromptAtEnd(msg.data);
             break;
           case 'directory-change':
             sessionContext.directory = msg.directory;
@@ -1008,7 +1010,8 @@ export class ShareServer extends EventEmitter {
             break;
           case 'command-complete':
             // Command finished, show prompt in control mode
-            ${permissions === "control" ? "writePrompt();" : ""}
+            // Skip writing our own prompt if the remote shell already showed one
+            ${permissions === "control" ? "commandRunning = false; if (!lastOutputHadPrompt) { writePrompt(); } lastOutputHadPrompt = false;" : ""}
             break;
           case 'session-ended':
             setConnected(false);
@@ -1063,19 +1066,43 @@ export class ShareServer extends EventEmitter {
       };
     }
 
+    // Detect if output ends with a shell prompt (to avoid writing a duplicate prompt)
+    function detectPromptAtEnd(data) {
+      const clean = data.replace(/\\x1b\\[[0-9;]*[a-zA-Z]/g, '').replace(/\\x1b\\][^\\x07]*\\x07/g, '');
+      // Check if the cleaned output ends with common prompt patterns
+      const promptPatterns = [
+        /[\\w.-]+@[\\w.-]+:[^\\$#%]*[$#%]\\s*$/,     // user@host:dir$ or #
+        /\\[[\\w.-]+@[\\w.-]+\\s[^\\]]*\\][$#%]\\s*$/,  // [user@host dir]$
+        /[\\w.-]+@[\\w][\\w-]*\\s+[~\\/]\\S*\\s*[$#%]\\s*$/, // user@host dir % (zsh)
+        /[\\w.-]+@[\\w][\\w-]*\\s+[~\\/]\\s*[$#%]\\s*$/,     // user@host ~ %
+        /[$#%>]\\s*$/,                                // simple prompt ending
+      ];
+      for (const p of promptPatterns) {
+        if (p.test(clean)) return true;
+      }
+      return false;
+    }
+
     // Try to detect context changes (user, hostname, directory) from terminal output
     function detectContextChange(data) {
+      // Strip ANSI escape sequences for cleaner matching
+      const clean = data.replace(/\\x1b\\[[0-9;]*[a-zA-Z]/g, '').replace(/\\x1b\\][^\\x07]*\\x07/g, '');
+
       // Common prompt patterns that include user@host:dir
       const patterns = [
-        // user@host:dir$ or user@host:dir#
-        /([\\w.-]+)@([\\w.-]+):([~\\/][^\\$#\\n]*)[$#]\\s*$/m,
-        // [user@host dir]$ or [user@host dir]#
-        /\\[([\\w.-]+)@([\\w.-]+)\\s+([~\\/][^\\]\\n]*)\\][$#]\\s*$/m,
+        // user@host:dir$ or user@host:dir# or user@host:dir%
+        /([\\w.-]+)@([\\w.-]+):([~\\/][^\\$#%\\n]*)[$#%]\\s*$/m,
+        // [user@host dir]$ or [user@host dir]# or [user@host dir]%
+        /\\[([\\w.-]+)@([\\w.-]+)\\s+([~\\/][^\\]\\n]*)\\][$#%]\\s*$/m,
+        // user@host dir % (zsh/Mac style - space separated, no colon)
+        /([\\w.-]+)@([\\w][\\w-]*)\\s+([~\\/][^\\$#%\\n]*)\\s*[$#%]\\s*$/m,
+        // user@host ~ % or user@host / % (short dir)
+        /([\\w.-]+)@([\\w][\\w-]*)\\s+([~\\/])\\s*[$#%]\\s*$/m,
       ];
 
       let updated = false;
       for (const pattern of patterns) {
-        const match = data.match(pattern);
+        const match = clean.match(pattern);
         if (match) {
           const newUser = match[1].trim();
           const newHost = match[2].trim();
@@ -1112,14 +1139,34 @@ export class ShareServer extends EventEmitter {
     let inputBuffer = '';
     let cursorPos = 0;
     let pendingCompletion = false;
+    let commandRunning = false;
+    let lastOutputHadPrompt = false;
 
     term.onData((data) => {
       if (ws && ws.readyState === WebSocket.OPEN) {
+        // Handle bracket paste mode: strip \\x1b[200~ prefix and \\x1b[201~ suffix
+        // Remote shells (especially nested SSH) enable bracket paste mode,
+        // which wraps pasted text in these escape sequences.
+        if (data.startsWith('\\x1b[200~')) {
+          data = data.replace(/^\\x1b\\[200~/, '').replace(/\\x1b\\[201~$/, '');
+          if (!data) return;
+        }
+
         // Handle special keys
         if (data === '\\r') {
-          // Enter key - send the command
+          // Enter key
+          if (commandRunning) {
+            // Command is running and waiting for input - send as raw input
+            ws.send(JSON.stringify({ type: 'raw', data: inputBuffer + '\\n' }));
+            term.write('\\r\\n');
+            inputBuffer = '';
+            cursorPos = 0;
+            return;
+          }
+          // Normal mode - send as command
           term.write('\\r\\n');
           if (inputBuffer.trim()) {
+            commandRunning = true;
             ws.send(JSON.stringify({ type: 'command', command: inputBuffer }));
           } else {
             writePrompt();
@@ -1141,6 +1188,7 @@ export class ShareServer extends EventEmitter {
         } else if (data === '\\x03') {
           // Ctrl+C - interrupt current command
           ws.send(JSON.stringify({ type: 'interrupt' }));
+          commandRunning = false;
           inputBuffer = '';
           cursorPos = 0;
           term.write('^C\\r\\n');
@@ -1200,8 +1248,46 @@ export class ShareServer extends EventEmitter {
             pendingCompletion = true;
             ws.send(JSON.stringify({ type: 'complete', partial: inputBuffer }));
           }
+        } else if (data.length > 1 && data.charCodeAt(0) >= 32) {
+          // Multi-character input (paste) - could contain newlines
+          // If a command is running, send as raw input
+          if (commandRunning) {
+            ws.send(JSON.stringify({ type: 'raw', data: data }));
+            return;
+          }
+          // Split on newlines to handle pasted text with line breaks
+          const lines = data.split(/\\r?\\n|\\r/);
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            // Insert printable text into buffer
+            if (line.length > 0) {
+              inputBuffer = inputBuffer.slice(0, cursorPos) + line + inputBuffer.slice(cursorPos);
+              cursorPos += line.length;
+              term.write(line + inputBuffer.slice(cursorPos));
+              if (inputBuffer.length > cursorPos) {
+                term.write('\\x1b[' + (inputBuffer.length - cursorPos) + 'D');
+              }
+            }
+            // If there are more lines, execute current buffer as a command
+            if (i < lines.length - 1) {
+              term.write('\\r\\n');
+              if (inputBuffer.trim()) {
+                commandRunning = true;
+                ws.send(JSON.stringify({ type: 'command', command: inputBuffer }));
+              } else {
+                writePrompt();
+              }
+              inputBuffer = '';
+              cursorPos = 0;
+            }
+          }
         } else if (data.charCodeAt(0) >= 32 && data.charCodeAt(0) < 127) {
-          // Regular printable ASCII characters
+          // Single printable ASCII character
+          if (commandRunning) {
+            // Command is running and waiting for input - send as raw
+            ws.send(JSON.stringify({ type: 'raw', data: data }));
+            return;
+          }
           inputBuffer = inputBuffer.slice(0, cursorPos) + data + inputBuffer.slice(cursorPos);
           cursorPos += data.length;
           // Write character and rest of line

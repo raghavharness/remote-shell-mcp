@@ -132,12 +132,14 @@ export class DirectoryTracker {
         const cleanOutput = stripAnsi(output);
         // Common prompt patterns with paths
         const patterns = [
-            // user@host:/path/to/dir$
-            /[@:]\s*([\/~][^\s$#>]*)\s*[$#>]\s*$/m,
-            // [user@host path]$
-            /\[.*?\s+([\/~][^\]]*)\]\s*[$#>]\s*$/m,
+            // user@host:/path/to/dir$ or % or #
+            /[@:]\s*([\/~][^\s$#%>]*)\s*[$#%>]\s*$/m,
+            // [user@host path]$ or % or #
+            /\[.*?\s+([\/~][^\]]*)\]\s*[$#%>]\s*$/m,
             // (env) user@host:path$
-            /:\s*([\/~][^\s$#>]*)\s*[$#>]\s*$/m,
+            /:\s*([\/~][^\s$#%>]*)\s*[$#%>]\s*$/m,
+            // user@host dir % (zsh/Mac style - space separated, dir after hostname)
+            /\w+@[\w.-]+\s+([~\/]\S*)\s*[$#%]\s*$/m,
         ];
         for (const pattern of patterns) {
             const match = cleanOutput.match(pattern);

@@ -167,12 +167,14 @@ export class UserTracker {
 
     // Common prompt patterns
     const patterns = [
-      // user@host:path$ or user@host:path#
+      // user@host:path$ or user@host:path# or user@host:path%
       /^([a-z_][a-z0-9_-]*)@[\w.-]+:/m,
-      // [user@host path]$ or [user@host path]#
+      // [user@host path]$ or [user@host path]# or [user@host path]%
       /^\[([a-z_][a-z0-9_-]*)@[\w.-]+\s/m,
-      // user@host $ or user@host #
-      /^([a-z_][a-z0-9_-]*)@[\w.-]+\s*[$#]\s*$/m,
+      // user@host $ or user@host # or user@host %
+      /^([a-z_][a-z0-9_-]*)@[\w.-]+\s*[$#%]\s*$/m,
+      // user@host dir % (zsh/Mac style - space separated)
+      /^([a-z_][a-z0-9_-]*)@[\w.-]+\s+[~\/]\S*\s*[$#%]\s*$/m,
     ];
 
     for (const pattern of patterns) {
